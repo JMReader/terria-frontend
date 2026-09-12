@@ -7,7 +7,7 @@ import { Filter } from "lucide-react";
 import gsap from "gsap";
 
 interface FieldCardsListProps {
-  selectedField: FieldItem;
+  selectedField?: FieldItem | null;
   onSelectField: (field: FieldItem) => void;
   filterQuery?: string;
   className?: string;
@@ -73,7 +73,7 @@ export default function FieldCardsList({
             <FieldCard
               key={field.id}
               field={field}
-              isSelected={selectedField.id === field.id}
+              isSelected={selectedField?.id === field.id}
               onSelect={onSelectField}
             />
           ))

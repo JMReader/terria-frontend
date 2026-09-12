@@ -23,6 +23,9 @@ export interface FieldItem {
   description?: string;
   status?: "disponible" | "en_negociacion" | "destacado" | "published" | "draft";
 
+  ownerPhone?: string;  // WhatsApp contact number with country code, e.g. "5493516884210"
+  ownerName?: string;   // Owner or property manager name
+
   // Backend-sourced optional fields
   crop?: string;         // alias for primaryCrop from backend
   soilType?: string;     // alias for soilSeries from backend
@@ -55,6 +58,8 @@ export const FIELDS_DATA: FieldItem[] = [
     waterTable: "Óptima a 1.8m",
     irrigation: false,
     status: "destacado",
+    ownerPhone: "+5493516884210",
+    ownerName: "Establecimiento La Esperanza",
     tags: ["Av. 11 de Septiembre", "Frente Asfalto", "Alta Productividad", "Suelo Clase II"],
     description: "Excelente establecimiento agropecuario ubicado sobre Avenida 11 de Septiembre (Coronel Olmedo, Córdoba). Lotes con delimitaciones reales bien definidas por caminos rurales y alambrados perimetrales. Historial de rotación maíz/soja de alto rendimiento y napa freática en cota estival.",
   },
@@ -78,6 +83,8 @@ export const FIELDS_DATA: FieldItem[] = [
     waterTable: "Excelente a 1.4m",
     irrigation: false,
     status: "disponible",
+    ownerPhone: "+5493516884210",
+    ownerName: "Administración Don Pedro",
     tags: ["Zona Núcleo Premium", "Suelo Clase I", "Rinde Histórico Top"],
     description: "Campo de máxima productividad en el corazón de la Zona Núcleo rural de Pergamino. Suelos profundos sin limitantes físico-químicas, con capacidad de almacenaje de agua de 300 mm.",
   },
@@ -101,6 +108,8 @@ export const FIELDS_DATA: FieldItem[] = [
     waterTable: "Moderada a 2.3m",
     irrigation: false,
     status: "disponible",
+    ownerPhone: "+5493516884210",
+    ownerName: "Ing. Agr. Carlos Benítez",
     tags: ["Rotación Intensiva", "Galpón y Silos", "Luz Trifásica"],
     description: "Lote altamente tecnificado en el cinturón agrícola de Venado Tuerto con conectividad e infraestructura completa para almacenamiento y monitoreo de siembra variable.",
   },
@@ -124,6 +133,8 @@ export const FIELDS_DATA: FieldItem[] = [
     waterTable: "Riego Pivote Central",
     irrigation: true,
     status: "en_negociacion",
+    ownerPhone: "+5493516884210",
+    ownerName: "Grupo San Jerónimo SRL",
     tags: ["2 Pivotes de Riego", "Trigo Cervecero", "Energía Solar"],
     description: "Campo mixto agrícola en la cuenca rural de Villa María con 280 ha bajo riego suplementario por pivote central Valley. Garantía de rendimiento aún en campañas de déficit hídrico.",
   },
@@ -147,6 +158,8 @@ export const FIELDS_DATA: FieldItem[] = [
     waterTable: "Subterránea a 2.2m",
     irrigation: true,
     status: "disponible",
+    ownerPhone: "+5493516884210",
+    ownerName: "Establecimiento La Josefina",
     tags: ["Apto Papa", "Cebada de Exportación", "Microclima Sureste"],
     description: "Ubicado en el polo de papa y cebada en los valles agrícolas del sudeste bonaerense. Suelo con alto tenor de materia orgánica (4.8%) y óptima fertilidad natural.",
   },

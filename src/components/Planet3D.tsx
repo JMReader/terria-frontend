@@ -5,18 +5,16 @@ import React, { useEffect, useRef, useCallback } from "react";
 import * as maplibregl from "maplibre-gl";
 import "maplibre-gl/dist/maplibre-gl.css";
 import { FIELDS_DATA, FieldItem } from "@/data/fieldsData";
-import { useFieldTimelapse } from "@/hooks/useFieldTimelapse";
 import { generateParcelsGeoJson } from "@/data/backendParcelsGeoJson";
 import { ZoomIn, ZoomOut, Info } from "lucide-react";
 
 export interface Planet3DProps {
   embedded?: boolean;
-  selectedField?: FieldItem;
+  selectedField?: FieldItem | null;
   isExpanded?: boolean;
   className?: string;
   onSelectField?: (field: FieldItem) => void;
   onDiveEnd?: () => void;
-  timelapse?: ReturnType<typeof useFieldTimelapse>;
   fields?: FieldItem[];
 }
 
@@ -81,7 +79,6 @@ export default function Planet3D({
   className = "",
   onSelectField,
   onDiveEnd,
-  timelapse,
   fields,
 }: Planet3DProps) {
   const mapContainerRef = useRef<HTMLDivElement>(null);
@@ -102,17 +99,13 @@ export default function Planet3D({
 
   // Construct GeoJSON FeatureCollection for field cadastral parcels & crop sectors
   const buildParcelsGeoJson = useCallback(() => {
-    const selectedDate = timelapse?.timelineState?.selectedDate || "2024-01-01";
-    const activeLayer = (timelapse?.activeLayer as "rgb" | "ndvi" | "weather") || "ndvi";
     return generateParcelsGeoJson(
-      selectedDate,
-      activeLayer,
+      "2024-01-01",
+      "ndvi",
       selectedField?.id,
-      fieldsList,
-      timelapse?.timelineState,
-      timelapse?.manifest
+      fieldsList
     );
-  }, [timelapse?.timelineState, timelapse?.activeLayer, timelapse?.manifest, selectedField?.id, fieldsList]);
+  }, [selectedField?.id, fieldsList]);
 
   // Add parcels layers on map style load
   const addParcelLayers = useCallback(

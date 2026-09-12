@@ -9,13 +9,9 @@ import FieldDetailView from "@/components/FieldDetailView";
 import FieldExpandedSheet from "@/components/FieldExpandedSheet";
 import Hero from "@/components/landing/Hero";
 import SiteFooter from "@/components/landing/SiteFooter";
-import { useFieldTimelapse } from "@/hooks/useFieldTimelapse";
-import { DEMO_TIMELAPSE_MANIFEST } from "@/data/timelapseMockData";
 import { Satellite, Move3d } from "lucide-react";
 import gsap from "gsap";
 import { useGSAP } from "@gsap/react";
-import { TimelapseManifest } from "@/types/terria";
-import { normalizeTimelapseManifest } from "@/lib/timelapseNormalizer";
 
 gsap.registerPlugin(useGSAP);
 
@@ -50,11 +46,10 @@ const FieldTerrainGPU = dynamic(
 );
 
 export default function Home() {
-  const [selectedField, setSelectedField] = useState<FieldItem>(FIELDS_DATA[0]);
+  const [selectedField, setSelectedField] = useState<FieldItem | null>(null);
   const [isFieldExpanded, setIsFieldExpanded] = useState(false);
   const [searchQuery, setSearchQuery] = useState("");
   const [backendFields, setBackendFields] = useState<FieldItem[]>(FIELDS_DATA);
-  const [timelapseManifest, setTimelapseManifest] = useState<TimelapseManifest>(DEMO_TIMELAPSE_MANIFEST);
   const [dataSheetOpen, setDataSheetOpen] = useState(false);
   const [terrainFallback, setTerrainFallback] = useState<string | null>(null);
   const [terrainReveal, setTerrainReveal] = useState(false);
@@ -110,31 +105,12 @@ export default function Home() {
                 tags: ["Zona Núcleo", "Suelo Clase I-II", "Monitoreo Satelital"],
                 publicSlug: f.public_slug,
                 boundary: f.boundary,
+                ownerPhone: f.owner_phone || "+5493516884210",
+                ownerName: f.owner_name || "Administración del Lote",
               };
             });
             // Solo los campos que existen en la BD — sin mezclar el catálogo mock
             setBackendFields(mapped);
-            setSelectedField((prev) =>
-              mapped.some((f) => f.id === prev.id) ? prev : mapped[0]
-            );
-
-            const firstFieldId = mapped[0].id;
-            const tlRes = await fetch(`${API_URL}/v1/fields/${firstFieldId}/timelapses`);
-            if (tlRes.ok) {
-              const datasets = await tlRes.json();
-              const readyDataset = datasets.find(
-                (d: any) => d.status === "ready" || d.status === "partial"
-              );
-              if (readyDataset) {
-                const manifestRes = await fetch(
-                  `${API_URL}/v1/fields/${firstFieldId}/timelapses/${readyDataset.id}`
-                );
-                if (manifestRes.ok) {
-                  const raw = await manifestRes.json();
-                  setTimelapseManifest(normalizeTimelapseManifest(raw));
-                }
-              }
-            }
           }
         }
       } catch {
@@ -144,9 +120,6 @@ export default function Home() {
 
     fetchBackendData();
   }, []);
-
-  // Synchronized timelapse engine shared by map parcels + detail panel
-  const timelapse = useFieldTimelapse({ manifest: timelapseManifest });
 
   const pageContainerRef = useRef<HTMLDivElement>(null);
   const mapViewportRef = useRef<HTMLDivElement>(null);
@@ -168,7 +141,7 @@ export default function Home() {
     { scope: pageContainerRef }
   );
 
-  const handleSelectField = async (field: FieldItem) => {
+  const handleSelectField = (field: FieldItem) => {
     setSelectedField(field);
     setIsFieldExpanded(true);
     setTerrainFallback(null);
@@ -183,31 +156,11 @@ export default function Home() {
         { scale: 1, duration: 0.4, ease: "power2.out" }
       );
     }
-
-    try {
-      const tlRes = await fetch(`${API_URL}/v1/fields/${field.id}/timelapses`);
-      if (tlRes.ok) {
-        const datasets = await tlRes.json();
-        const readyDataset = datasets.find(
-          (d: any) => d.status === "ready" || d.status === "partial"
-        );
-        if (readyDataset) {
-          const manifestRes = await fetch(
-            `${API_URL}/v1/fields/${field.id}/timelapses/${readyDataset.id}`
-          );
-          if (manifestRes.ok) {
-            const raw = await manifestRes.json();
-            setTimelapseManifest(normalizeTimelapseManifest(raw));
-          }
-        }
-      }
-    } catch {
-      // Backend not responding for this field — keep active manifest
-    }
   };
 
   const handleBackToCatalog = () => {
     setIsFieldExpanded(false);
+    setSelectedField(null);
     setDataSheetOpen(false);
     setTerrainReveal(false);
     if (mapViewportRef.current) {
@@ -259,12 +212,11 @@ export default function Home() {
                 isExpanded={isFieldExpanded}
                 onSelectField={handleSelectField}
                 onDiveEnd={() => setTerrainReveal(true)}
-                timelapse={timelapse}
                 className="h-full w-full"
               />
 
               {/* Terreno 3D real — WebGPU sobre DEM; aparece al aterrizar el flyTo */}
-              {isFieldExpanded && terrainReveal && !terrainFallback && (
+              {isFieldExpanded && selectedField && terrainReveal && !terrainFallback && (
                 <div className="absolute inset-0 z-20 animate-in fade-in duration-300">
                   <FieldTerrainGPU
                     key={selectedField.id}
@@ -276,7 +228,7 @@ export default function Home() {
               )}
 
               {/* Tira de información — lo único sobre la escena */}
-              {isFieldExpanded && (
+              {isFieldExpanded && selectedField && (
                 <div className="absolute inset-x-0 bottom-0 z-30 flex items-center justify-between gap-3 border-t border-piedra-soft/70 bg-papel/85 px-4 py-2.5 backdrop-blur-sm">
                   <div className="flex min-w-0 items-center gap-3">
                     <button
@@ -306,12 +258,11 @@ export default function Home() {
             ref={cardsPanelRef}
             className="lg:col-span-5 xl:col-span-4 h-full min-h-0 flex flex-col overflow-hidden"
           >
-            {isFieldExpanded ? (
+            {isFieldExpanded && selectedField ? (
               <FieldDetailView
                 field={selectedField}
                 onBack={handleBackToCatalog}
                 onExpandData={() => setDataSheetOpen(true)}
-                sharedTimelapse={timelapse}
               />
             ) : (
               <FieldCardsList
@@ -327,11 +278,13 @@ export default function Home() {
       </section>
 
       {/* Sheet ampliada: Datos / Futuro / Solana */}
-      <FieldExpandedSheet
-        field={selectedField}
-        open={dataSheetOpen && isFieldExpanded}
-        onClose={() => setDataSheetOpen(false)}
-      />
+      {selectedField && (
+        <FieldExpandedSheet
+          field={selectedField}
+          open={dataSheetOpen && isFieldExpanded}
+          onClose={() => setDataSheetOpen(false)}
+        />
+      )}
 
       <SiteFooter />
     </div>
