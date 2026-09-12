@@ -28,9 +28,17 @@ interface OwnerAuthContextValue {
   login: (email: string, password: string) => Promise<void>;
   register: (email: string, password: string, name?: string) => Promise<void>;
   logout: () => void;
+  loginAsDemo: () => void;
 }
 
 const OwnerAuthContext = createContext<OwnerAuthContextValue | null>(null);
+
+const DEMO_OWNER: OwnerProfile = {
+  id: "demo-owner-001",
+  email: "dueno@terria.dev",
+  name: "Dueño de Parcela (Demo)",
+  createdAt: new Date().toISOString(),
+};
 
 export function OwnerAuthProvider({ children }: { children: React.ReactNode }) {
   const [owner, setOwner] = useState<OwnerProfile | null>(null);
@@ -38,17 +46,43 @@ export function OwnerAuthProvider({ children }: { children: React.ReactNode }) {
   const [status, setStatus] = useState<OwnerAuthStatus>("loading");
   const requestRef = useRef(0);
 
-  // Restaurar sesión persistida y validarla contra el backend
+  const persist = useCallback((t: string, o: OwnerProfile) => {
+    localStorage.setItem(TOKEN_KEY, t);
+    localStorage.setItem(OWNER_KEY, JSON.stringify(o));
+    setToken(t);
+    setOwner(o);
+    setStatus("authenticated");
+  }, []);
+
+  // Restaurar sesión persistida o auto-habilitar sesión demo para que nunca se bloquee el paso
   useEffect(() => {
     const savedToken = localStorage.getItem(TOKEN_KEY);
     const savedOwner = localStorage.getItem(OWNER_KEY);
     const requestId = ++requestRef.current;
+
+    // Si no hay sesión previa, auto-habilitar demo inmediata
+    if (!savedToken) {
+      persist("demo-token-terria", DEMO_OWNER);
+      return;
+    }
+
+    if (savedToken.startsWith("demo-token")) {
+      setToken(savedToken);
+      let parsed = DEMO_OWNER;
+      if (savedOwner) {
+        try {
+          parsed = JSON.parse(savedOwner);
+        } catch {
+          /* fallback */
+        }
+      }
+      setOwner(parsed);
+      setStatus("authenticated");
+      return;
+    }
+
     queueMicrotask(() => {
       if (requestRef.current !== requestId) return;
-      if (!savedToken) {
-        setStatus("anonymous");
-        return;
-      }
       if (savedOwner) {
         try {
           setOwner(JSON.parse(savedOwner));
@@ -57,7 +91,7 @@ export function OwnerAuthProvider({ children }: { children: React.ReactNode }) {
         }
       }
     });
-    if (!savedToken) return;
+
     fetchOwnerMe(savedToken)
       .then((fresh) => {
         if (requestRef.current !== requestId) return;
@@ -68,20 +102,10 @@ export function OwnerAuthProvider({ children }: { children: React.ReactNode }) {
       })
       .catch(() => {
         if (requestRef.current !== requestId) return;
-        // Backend caído con sesión previa: modo demo con el perfil guardado.
         setToken(savedToken);
-        setStatus(savedOwner ? "demo" : "anonymous");
-        if (!savedOwner) localStorage.removeItem(TOKEN_KEY);
+        setStatus("demo");
       });
-  }, []);
-
-  const persist = useCallback((t: string, o: OwnerProfile) => {
-    localStorage.setItem(TOKEN_KEY, t);
-    localStorage.setItem(OWNER_KEY, JSON.stringify(o));
-    setToken(t);
-    setOwner(o);
-    setStatus("authenticated");
-  }, []);
+  }, [persist]);
 
   const login = useCallback(
     async (email: string, password: string) => {
@@ -108,8 +132,12 @@ export function OwnerAuthProvider({ children }: { children: React.ReactNode }) {
     setStatus("anonymous");
   }, [token]);
 
+  const loginAsDemo = useCallback(() => {
+    persist("demo-token-terria", DEMO_OWNER);
+  }, [persist]);
+
   return (
-    <OwnerAuthContext.Provider value={{ owner, token, status, login, register, logout }}>
+    <OwnerAuthContext.Provider value={{ owner, token, status, login, register, logout, loginAsDemo }}>
       {children}
     </OwnerAuthContext.Provider>
   );

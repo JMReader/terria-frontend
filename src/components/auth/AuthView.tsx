@@ -16,7 +16,7 @@ const inputCls =
   "w-full rounded-xl border border-piedra-soft bg-nube px-3.5 py-2.5 text-sm text-bosque placeholder:text-piedra focus:border-musgo focus:outline-none focus-visible:ring-2 focus-visible:ring-musgo/30 transition-colors";
 
 export default function AuthView({ next }: AuthViewProps) {
-  const { status, login, register } = useOwnerAuth();
+  const { status, login, register, loginAsDemo } = useOwnerAuth();
   const router = useRouter();
   const [mode, setMode] = useState<Mode>("login");
   const [email, setEmail] = useState("");
@@ -136,12 +136,35 @@ export default function AuthView({ next }: AuthViewProps) {
               )}
               {mode === "login" ? "Ingresar" : "Crear cuenta"}
             </button>
+
+            <div className="relative my-2 flex items-center justify-center">
+              <span className="w-full border-t border-piedra-soft/70" />
+              <span className="absolute bg-papel px-2 text-[10px] font-mono uppercase text-piedra">o</span>
+            </div>
+
+            <button
+              type="button"
+              onClick={() => {
+                loginAsDemo();
+                router.replace(destination);
+              }}
+              className="flex w-full items-center justify-center gap-2 rounded-xl border border-musgo/40 bg-musgo/10 px-4 py-2 text-xs font-mono font-bold text-bosque transition-colors hover:bg-musgo/20 cursor-pointer"
+            >
+              ⚡ Ingreso Rápido Demo (1-Click)
+            </button>
           </form>
         </div>
 
-        <p className="mt-4 text-center text-[10px] font-mono text-piedra">
-          Demo local: dueno@terria.dev / terria1234
-        </p>
+        <button
+          type="button"
+          onClick={() => {
+            loginAsDemo();
+            router.replace(destination);
+          }}
+          className="mt-4 block w-full text-center text-[10px] font-mono text-piedra hover:text-bosque cursor-pointer underline decoration-dotted transition-colors"
+        >
+          Demo local: dueno@terria.dev / terria1234 (Click para entrar directo)
+        </button>
       </div>
     </div>
   );

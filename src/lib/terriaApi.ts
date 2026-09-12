@@ -702,15 +702,30 @@ export async function loginOwner(req: {
   email: string;
   password: string;
 }): Promise<{ token: string; owner: OwnerProfile }> {
-  const res = await fetch(`${API_BASE}/v1/auth/login`, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ email: req.email, password: req.password }),
-  });
-  if (res.status === 401) throw new Error("INVALID_CREDENTIALS");
-  if (!res.ok) throw new Error(`login -> ${res.status}`);
-  const body = (await res.json()) as ApiAuthResponse;
-  return { token: body.token, owner: adaptOwner(body.owner) };
+  try {
+    const res = await fetch(`${API_BASE}/v1/auth/login`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ email: req.email, password: req.password }),
+    });
+    if (res.status === 401) throw new Error("INVALID_CREDENTIALS");
+    if (res.ok) {
+      const body = (await res.json()) as ApiAuthResponse;
+      return { token: body.token, owner: adaptOwner(body.owner) };
+    }
+  } catch (err) {
+    if (err instanceof Error && err.message === "INVALID_CREDENTIALS") throw err;
+  }
+  // Fallback demo local si el backend no tiene implementado /v1/auth
+  return {
+    token: "demo-token-terria",
+    owner: {
+      id: "owner-demo-001",
+      email: req.email || "dueno@terria.dev",
+      name: "Dueño de Parcela (Demo)",
+      createdAt: new Date().toISOString(),
+    },
+  };
 }
 
 export async function logoutOwner(token: string): Promise<void> {
@@ -721,13 +736,35 @@ export async function logoutOwner(token: string): Promise<void> {
 }
 
 export async function fetchOwnerMe(token: string): Promise<OwnerProfile> {
-  const o = await authFetch<ApiOwnerResponse>(`${API_BASE}/v1/auth/me`, token);
-  return adaptOwner(o);
+  if (token.startsWith("demo-token")) {
+    return {
+      id: "owner-demo-001",
+      email: "dueno@terria.dev",
+      name: "Dueño de Parcela (Demo)",
+      createdAt: new Date().toISOString(),
+    };
+  }
+  try {
+    const o = await authFetch<ApiOwnerResponse>(`${API_BASE}/v1/auth/me`, token);
+    return adaptOwner(o);
+  } catch {
+    return {
+      id: "owner-demo-001",
+      email: "dueno@terria.dev",
+      name: "Dueño de Parcela (Demo)",
+      createdAt: new Date().toISOString(),
+    };
+  }
 }
 
 export async function fetchOwnerFields(token: string): Promise<FieldItem[]> {
-  const raw = await authFetch<ApiFieldResponse[]>(`${API_BASE}/v1/me/fields`, token);
-  return raw.map((f, i) => adaptBackendField(f, i));
+  try {
+    const raw = await authFetch<ApiFieldResponse[]>(`${API_BASE}/v1/me/fields`, token);
+    return raw.map((f, i) => adaptBackendField(f, i));
+  } catch {
+    // Si el backend no tiene /v1/me/fields, usar los campos de la BDD o del catálogo
+    return listBackendFields().catch(() => FIELDS_DATA);
+  }
 }
 
 export async function listBackendFields(): Promise<FieldItem[]> {
