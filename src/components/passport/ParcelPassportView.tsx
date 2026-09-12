@@ -2,7 +2,7 @@
 
 import React, { useEffect, useState } from "react";
 import Link from "next/link";
-import { Satellite, ShieldCheck, Shuffle, TrendingUp } from "lucide-react";
+import { FlaskConical, History, ShieldCheck, TrendingUp } from "lucide-react";
 import { FieldItem } from "@/data/fieldsData";
 import {
   PassportMode,
@@ -32,9 +32,9 @@ export interface ParcelPassportViewProps {
 }
 
 const TABS = [
-  { id: "datos", label: "Datos", icon: Satellite },
-  { id: "futurologia", label: "Futurología", icon: TrendingUp },
-  { id: "whatif", label: "What-if", icon: Shuffle },
+  { id: "tiempo", label: "Paso del tiempo", icon: History },
+  { id: "proyeccion", label: "Proyección", icon: TrendingUp },
+  { id: "escenarios", label: "Escenarios", icon: FlaskConical },
 ] as const;
 
 type TabId = (typeof TABS)[number]["id"];
@@ -55,10 +55,10 @@ export default function ParcelPassportView({
   onUnshare,
 }: ParcelPassportViewProps) {
   const [manifest, setManifest] = useState<TimelapseManifest>(DEMO_TIMELAPSE_MANIFEST);
-  const [tab, setTab] = useState<TabId>("datos");
+  const [tab, setTab] = useState<TabId>("tiempo");
   // Cada pestaña se monta la primera vez que se visita y luego queda viva
   // (hidden) — preserva el estado de formularios y evita re-fetches.
-  const [visited, setVisited] = useState<ReadonlySet<TabId>>(() => new Set(["datos"]));
+  const [visited, setVisited] = useState<ReadonlySet<TabId>>(() => new Set(["tiempo"]));
 
   const selectTab = (id: TabId) => {
     setTab(id);
@@ -198,33 +198,33 @@ export default function ParcelPassportView({
 
           {/* Contenido de la pestaña — scroll interno */}
           <div className="flex-1 overflow-y-auto p-4 sm:p-5 custom-scrollbar lg:min-h-0">
-            {visited.has("datos") && (
+            {visited.has("tiempo") && (
               <div
                 role="tabpanel"
-                id="passport-panel-datos"
-                aria-label="Datos"
-                className={`space-y-4 ${tab === "datos" ? "" : "hidden"}`}
+                id="passport-panel-tiempo"
+                aria-label="Paso del tiempo"
+                className={`space-y-4 ${tab === "tiempo" ? "" : "hidden"}`}
               >
                 <PassportTimelapse field={field} timelapse={timelapse} />
                 <SolanaAuditCard certification={DEMO_SOLANA_CERTIFICATION} />
               </div>
             )}
-            {visited.has("futurologia") && (
+            {visited.has("proyeccion") && (
               <div
                 role="tabpanel"
-                id="passport-panel-futurologia"
-                aria-label="Futurología"
-                className={tab === "futurologia" ? "" : "hidden"}
+                id="passport-panel-proyeccion"
+                aria-label="Proyección"
+                className={tab === "proyeccion" ? "" : "hidden"}
               >
                 <ValuationPanel field={field} />
               </div>
             )}
-            {visited.has("whatif") && (
+            {visited.has("escenarios") && (
               <div
                 role="tabpanel"
-                id="passport-panel-whatif"
-                aria-label="What-if"
-                className={tab === "whatif" ? "" : "hidden"}
+                id="passport-panel-escenarios"
+                aria-label="Escenarios"
+                className={tab === "escenarios" ? "" : "hidden"}
               >
                 <WhatIfPanel field={field} />
               </div>
