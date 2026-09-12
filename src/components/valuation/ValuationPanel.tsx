@@ -104,12 +104,12 @@ export default function ValuationPanel({
       {/* Desglose de los 3 motores de valor */}
       <div>
         <span className="text-[10px] font-mono font-bold tracking-wider text-piedra uppercase block mb-2.5">
-          Motores de valor (V0 × M_log × M_agro × M_mkt)
+          Motores de valor (V0 × M_hyd × M_soil × M_rent)
         </span>
         <div className="space-y-2.5">
           <DriverMultiplierCard
-            title="Logística vial"
-            tag="Overpass · OSM"
+            title="Resiliencia hídrica & logística"
+            tag="Napa INTA · OSM"
             accent="blue"
             driver={d.logisticImprovement}
             sharePercent={
@@ -117,18 +117,21 @@ export default function ValuationPanel({
             }
             extraRows={[
               {
-                label: "Asfalto actual",
+                label: "Acceso pavimentado",
                 value: `${d.logisticImprovement.distanceToCurrentPavedKm} km`,
               },
               {
-                label: "Asfalto futuro",
-                value: `${d.logisticImprovement.distanceToFuturePavedKm} km`,
+                label: "Aporte hídrico / napa",
+                value:
+                  d.logisticImprovement.impactPercentage > 0
+                    ? `+${d.logisticImprovement.impactPercentage.toFixed(1)}%`
+                    : "Secano neutro",
               },
             ]}
           />
           <DriverMultiplierCard
-            title="Tendencia agronómica"
-            tag="SAGyP · 15 años"
+            title="Salud de suelo & satélite"
+            tag="Sentinel-2 · SAGyP"
             accent="emerald"
             driver={d.agronomicTrend}
             sharePercent={
@@ -139,12 +142,12 @@ export default function ValuationPanel({
                 label: "CAGR rindes",
                 value: `+${d.agronomicTrend.cagrAnnualPct.toFixed(1)}%/año`,
               },
-              { label: "Factor capitalización", value: "0.8" },
+              { label: "Elasticidad suelo", value: "0.52" },
             ]}
           />
           <DriverMultiplierCard
-            title="Apreciación de mercado"
-            tag="Activo rural USD"
+            title="Ciclo de renta & capitalización"
+            tag="CAIR · BCR"
             accent="amber"
             driver={d.marketAppreciation}
             sharePercent={
@@ -152,10 +155,10 @@ export default function ValuationPanel({
             }
             extraRows={[
               {
-                label: "Tasa anual",
-                value: `+${d.marketAppreciation.annualRatePct.toFixed(1)}%`,
+                label: "Tasa anual USD",
+                value: `+${d.marketAppreciation.annualRatePct.toFixed(2)}%`,
               },
-              { label: "Compuesto", value: `${projectionYears} años` },
+              { label: "Capitalización", value: "2.85% anual" },
             ]}
           />
         </div>
