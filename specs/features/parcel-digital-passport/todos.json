@@ -1,15 +1,65 @@
 {
   "$schema": "todos/v1",
   "feature_id": "parcel-digital-passport",
-  "version": "1.1.0",
-  "status": "pending_execution",
+  "version": "1.2.0",
+  "status": "in_execution",
   "changelog": [
     {
       "version": "1.1.0",
       "changes": "Se agregan tareas de auth (T02-T04, T07-T09), panel /mis-parcelas y flujo 'copiar link público'. Renumeración completa."
+    },
+    {
+      "version": "1.2.0",
+      "changes": "Se agrega batch 0 con tareas de backend (auth owners, owner_id, /v1/me/fields, certificate.pdf, seed demo)."
     }
   ],
   "batches": [
+    {
+      "batch": 0,
+      "description": "Backend (terria FastAPI): auth de owners, ownership y certificado PDF",
+      "tasks": [
+        {
+          "id": "B01",
+          "title": "Crear app/auth.py — owners + auth_tokens en SQLite, PBKDF2 password hash, Bearer opaco; endpoints register/login/logout/me",
+          "owner_role": "backend",
+          "status": "pending",
+          "parallelizable": false,
+          "depends_on": [],
+          "outputs": ["app/auth.py", "endpoints /v1/auth/* en main.py"],
+          "exit_criteria": "register 201/login 200/logout 204/me 200; 409 email duplicado; 401 credenciales inválidas."
+        },
+        {
+          "id": "B02",
+          "title": "Extender app/store.py y schemas — columna owner_id migrada, list_by_owner, FieldResponse.owner_id; mutaciones y /v1/me/fields exigen Bearer del dueño",
+          "owner_role": "backend",
+          "status": "pending",
+          "parallelizable": false,
+          "depends_on": ["B01"],
+          "outputs": ["app/store.py", "app/schemas.py", "GET /v1/me/fields"],
+          "exit_criteria": "POST /v1/fields con Bearer asigna owner; publish/unpublish/patch/delete de parcela ajena → 403; /v1/me/fields solo devuelve las propias."
+        },
+        {
+          "id": "B03",
+          "title": "Crear app/certificate.py + GET /v1/fields/{id}/certificate.pdf — PDF 1.4 hand-rolled con nombre, ha, content_hash SHA-256 canónico y URL pública",
+          "owner_role": "backend",
+          "status": "pending",
+          "parallelizable": true,
+          "depends_on": [],
+          "outputs": ["app/certificate.py", "endpoint certificate.pdf"],
+          "exit_criteria": "Devuelve application/pdf válido que abre en visor; incluye content_hash y link al pasaporte público."
+        },
+        {
+          "id": "B04",
+          "title": "Crear scripts/seed_demo.py — owner demo + 4 parcelas con boundaries (1 publicada), idempotente",
+          "owner_role": "backend",
+          "status": "pending",
+          "parallelizable": false,
+          "depends_on": ["B02"],
+          "outputs": ["scripts/seed_demo.py", "data/terria.db sembrada"],
+          "exit_criteria": "uv run python scripts/seed_demo.py deja owner dueno@terria.dev con parcelas; re-ejecutar no duplica."
+        }
+      ]
+    },
     {
       "batch": 1,
       "description": "Tipos y capa de datos (auth + parcelas)",

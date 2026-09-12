@@ -2,13 +2,17 @@
   "$schema": "technical-spec/v1",
   "feature_id": "parcel-digital-passport",
   "title": "Technical Spec: Auth liviano de dueño (token Bearer), panel /mis-parcelas, rutas direccionables (/parcela/[id] owner-guarded, /p/[slug] público), Pasaporte Digital con 6 secciones reutilizando engines existentes y copiado de link público",
-  "version": "1.1.0",
-  "status": "DRAFT — awaiting user approval (Gate 2)",
-  "based_on": "functional-spec v1.1.0",
+  "version": "1.2.0",
+  "status": "APPROVED — in implementation",
+  "based_on": "functional-spec v1.2.0",
   "changelog": [
     {
       "version": "1.1.0",
       "changes": "Se agrega capa de auth (register/login/me, Bearer token), rutas /ingresar y /mis-parcelas, guarda de rutas owner con verificación de pertenencia, y el flujo 'copiar link público' (publica si es privada + copia URL)."
+    },
+    {
+      "version": "1.2.0",
+      "changes": "Se incorpora backend_specifications: implementación real en terria (FastAPI + SQLite) de auth de owners, owner_id, /v1/me/fields, enforcement de pertenencia y PDF de certificado + seed demo."
     }
   ],
 
@@ -217,6 +221,42 @@
     },
     "src/app/page.tsx + FloatingIslandHeader (wiring)": {
       "purpose": "onOpenPassport con lógica sesión/publicación; header suma SessionStatus (Ingresar / Hola · Mis parcelas · Salir)."
+    }
+  },
+
+  "backend_specifications": {
+    "repo": "terria (FastAPI + SQLite local, workspace re-brand)",
+    "app/auth.py": {
+      "purpose": "Auth de owners sin deps externas: PBKDF2-HMAC-SHA256 para passwords (hashlib stdlib) y tokens opacos secrets.token_urlsafe persistidos en tabla auth_tokens.",
+      "tables": [
+        "owners(id TEXT PK, email TEXT UNIQUE NOT NULL, password_hash TEXT NOT NULL, name TEXT, created_at TEXT)",
+        "auth_tokens(token TEXT PK, owner_id TEXT NOT NULL, created_at TEXT)"
+      ],
+      "endpoints": [
+        "POST /v1/auth/register {email,password,name?} → 201 {token, owner}; 409 si email existe",
+        "POST /v1/auth/login {email,password} → {token, owner}; 401 genérico si falla",
+        "POST /v1/auth/logout (Bearer) → 204, borra el token",
+        "GET /v1/auth/me (Bearer) → owner; 401 sin token válido"
+      ]
+    },
+    "app/store.py (extensión)": {
+      "purpose": "Migración SQLite: columna owner_id TEXT en fields (ALTER TABLE guardado por PRAGMA table_info). list_by_owner(owner_id). FieldResponse suma owner_id nullable.",
+      "ownership_enforcement": "publish/unpublish/update/archive y GET /v1/me/fields requieren Bearer del dueño; mutaciones sobre parcela ajena → 403. GET /v1/fields y GET /v1/fields/{id} quedan públicos (el catálogo los necesita); POST /v1/fields con Bearer asigna owner_id."
+    },
+    "app/main.py (extensión)": {
+      "endpoints": [
+        "GET /v1/me/fields (Bearer) → list[FieldResponse] del owner",
+        "GET /v1/fields/{id}/certificate.pdf → application/pdf del certificado"
+      ],
+      "dependency": "get_current_owner(request) — lee Authorization: Bearer y resuelve owner o 401."
+    },
+    "app/certificate.py": {
+      "purpose": "Generador PDF mínimo sin deps (PDF 1.4 hand-rolled): certificado con nombre del campo, hectáreas, content_hash SHA-256 del payload canónico, URL pública /p/{slug}, fecha de emisión y sello TERRIA.",
+      "content_hash": "SHA-256 sobre JSON canónico (RFC 8785-ish: keys ordenadas) del field — el mismo que el front muestra en la sección Certificado."
+    },
+    "scripts/seed_demo.py": {
+      "purpose": "Seed local: owner demo (dueno@terria.dev / terria1234) + 4 parcelas con boundaries reales-ish (polígonos alrededor de centroides del mock), 1 publicada. Idempotente.",
+      "run": "cd terria && uv run python scripts/seed_demo.py"
     }
   },
 

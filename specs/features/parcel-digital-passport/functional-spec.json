@@ -2,12 +2,16 @@
   "$schema": "functional-spec/v1",
   "feature_id": "parcel-digital-passport",
   "title": "Pasaporte Digital de Parcela — Auth liviano de dueño, panel 'mis parcelas', vista completa por ID con todas las features (diorama 3D, timelapse, futurología, what-if y certificado blockchain) y link público compartible",
-  "version": "1.1.0",
-  "status": "DRAFT — awaiting user approval (Gate 1)",
+  "version": "1.2.0",
+  "status": "APPROVED — in implementation",
   "changelog": [
     {
       "version": "1.1.0",
       "changes": "Se incorpora auth liviano de dueño (registro/login) y panel 'mis parcelas'. El pasaporte queda primariamente detrás del auth del dueño; desde el listado el dueño copia un link público que una vez compartido puede verlo cualquiera."
+    },
+    {
+      "version": "1.2.0",
+      "changes": "Aprobado. Se confirma que el alcance incluye el backend (auth de owners, owner_id en fields, /v1/me/fields, PDF de certificado y seed demo local)."
     }
   ],
 
@@ -302,17 +306,17 @@
   ],
 
   "backend_dependencies": [
-    { "endpoint": "POST /v1/auth/register", "status": "new — backend contract", "purpose": "Crear cuenta de dueño {email, password, name?} → {token, owner}." },
-    { "endpoint": "POST /v1/auth/login", "status": "new — backend contract", "purpose": "Ingreso {email, password} → {token, owner}." },
-    { "endpoint": "GET /v1/auth/me", "status": "new — backend contract", "purpose": "Perfil del dueño autenticado (valida token)." },
-    { "endpoint": "GET /v1/me/fields", "status": "new — backend contract", "purpose": "Listado de parcelas del dueño con is_published/public_slug (alternativa: GET /v1/fields?owner=me)." },
-    { "endpoint": "GET /v1/fields/{id}", "status": "assumed-existing", "purpose": "Payload de parcela individual para el pasaporte owner (debe verificar pertenencia)." },
+    { "endpoint": "POST /v1/auth/register", "status": "implemented in this feature", "purpose": "Crear cuenta de dueño {email, password, name?} → {token, owner}." },
+    { "endpoint": "POST /v1/auth/login", "status": "implemented in this feature", "purpose": "Ingreso {email, password} → {token, owner}." },
+    { "endpoint": "GET /v1/auth/me", "status": "implemented in this feature", "purpose": "Perfil del dueño autenticado (valida token)." },
+    { "endpoint": "GET /v1/me/fields", "status": "implemented in this feature", "purpose": "Listado de parcelas del dueño con visibility/public_slug." },
+    { "endpoint": "GET /v1/fields/{id}", "status": "existing", "purpose": "Payload de parcela (público para el catálogo; la gestión queda detrás del Bearer)." },
     { "endpoint": "GET /v1/fields/{id}/timelapses + manifest", "status": "existing", "purpose": "Sección timelapse." },
     { "endpoint": "POST /v1/fields/{id}/simulations/what-if", "status": "existing", "purpose": "Sección what-if." },
-    { "endpoint": "POST /v1/valuations/5yr", "status": "existing (standalone)", "purpose": "Sección futurología; migrar a /v1/fields/{id}/valuations/5yr cuando exista." },
-    { "endpoint": "GET /v1/public/fields/{slug}", "status": "new — backend contract", "purpose": "Payload sanitizado del pasaporte público (sin auth)." },
-    { "endpoint": "POST /v1/fields/{id}/publish · POST /v1/fields/{id}/unpublish", "status": "new — backend contract", "purpose": "Compartir/descompartir el link público (requiere token de dueño)." },
-    { "endpoint": "GET /v1/fields/{id}/certificate.pdf", "status": "in-progress (backend)", "purpose": "Descarga del PDF blockchain desde la sección Certificado." }
+    { "endpoint": "POST /v1/valuations/5yr", "status": "existing (standalone)", "purpose": "Sección futurología." },
+    { "endpoint": "GET /v1/public/fields/{slug}", "status": "existing", "purpose": "Payload sanitizado del pasaporte público (sin auth)." },
+    { "endpoint": "POST /v1/fields/{id}/publish · POST /v1/fields/{id}/unpublish", "status": "existing + ownership enforcement", "purpose": "Compartir/descompartir el link público (requiere Bearer del dueño)." },
+    { "endpoint": "GET /v1/fields/{id}/certificate.pdf", "status": "implemented in this feature", "purpose": "PDF del certificado blockchain (content_hash + URL pública + fecha)." }
   ],
 
   "open_questions": [
