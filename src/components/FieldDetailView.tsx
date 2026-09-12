@@ -86,11 +86,15 @@ export default function FieldDetailView({
         </div>
       </div>
 
-      {/* Identidad mínima */}
+      {/* Resumen corto de Octa — restaurado completo */}
       <div className="flex-1 min-h-0 overflow-y-auto p-4 sm:p-5 custom-scrollbar">
         <dl>
           <DefRow label="Superficie">{field.hectares} ha</DefRow>
           <DefRow label="Cultivo">{field.primaryCrop || field.crop || "—"}</DefRow>
+          <DefRow label="Aptitud">
+            {field.suitabilityScore != null ? `${field.suitabilityScore}% · ` : ""}
+            {field.aptitude || "Clase I-II"}
+          </DefRow>
           <DefRow label="NDVI">
             <span className="inline-flex items-center gap-1.5">
               <span
@@ -104,10 +108,35 @@ export default function FieldDetailView({
             </span>
           </DefRow>
           <DefRow label="Suelo">{field.soilSeries || field.soilType || "—"}</DefRow>
+          <DefRow label="Napa">{field.waterTable || "Cota normal"}</DefRow>
+          <DefRow label="Régimen">{field.irrigation ? "Riego pivote" : "Secano"}</DefRow>
+          <DefRow label="Rinde ref.">
+            {field.rentQqSoja != null ? `${field.rentQqSoja} qq/ha` : "N/D"}
+          </DefRow>
         </dl>
 
+        <div className="mt-5">
+          <p className="text-[10px] font-mono font-bold uppercase tracking-wider text-piedra mb-1.5">
+            Campañas
+          </p>
+          <div className="text-xs font-mono">
+            <div className="flex items-center justify-between py-1.5 border-b border-piedra-soft/60">
+              <span className="text-bosque/75">2024/25 · Maíz Tardío</span>
+              <span className="font-bold text-musgo tabular-nums">98 qq/ha</span>
+            </div>
+            <div className="flex items-center justify-between py-1.5 border-b border-piedra-soft/60">
+              <span className="text-bosque/75">2023/24 · Soja 1ra</span>
+              <span className="font-bold text-bosque tabular-nums">41 qq/ha</span>
+            </div>
+            <div className="flex items-center justify-between py-1.5">
+              <span className="text-bosque/75">2022/23 · Trigo / Soja</span>
+              <span className="font-bold text-bosque tabular-nums">44 qq/ha</span>
+            </div>
+          </div>
+        </div>
+
         <p className="mt-6 text-[11px] font-mono leading-relaxed text-piedra">
-          Diorama 3D, timelapse satelital, futurología de valor, simulador what-if
+          Diorama 3D, timelapse satelital, proyección de valor, escenarios
           y certificado blockchain viven en el pasaporte digital de esta parcela.
         </p>
       </div>
