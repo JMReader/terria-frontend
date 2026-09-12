@@ -72,6 +72,10 @@ export interface MeshBuffers {
   normals: Float32Array;
   colors: Float32Array;
   elevs: Float32Array;
+  /** -1 = fuera del campo, 0 = interior sin lote, 1..K = índice de lote */
+  lotIdx: Float32Array;
+  /** uv normalizado dentro del bbox del perímetro (para drapear tiles Sentinel-2) */
+  satUv: Float32Array;
   indices: Uint32Array;
 }
 
@@ -85,6 +89,12 @@ export interface TerrainScene {
   maxH: number;
   contourStep: number; // meters between contour lines
   region: BBox;
+  /** bbox del perímetro real (lng/lat) — espacio UV del drape satelital */
+  fieldBBox: BBox;
+  /** ids de features de lote, alineados con lotIdx 1..K */
+  lotIds: string[];
+  /** colores iniciales por lote (index 0 = interior genérico) */
+  lotColors: [number, number, number][];
 }
 
 export function fieldPerimeterRing(field: FieldItem): number[][] {
@@ -172,13 +182,27 @@ export function buildTerrainScene(
   const normals = new Float32Array(n * n * 3);
   const colors = new Float32Array(n * n * 4);
   const elevs = new Float32Array(n * n);
+  const lotIdx = new Float32Array(n * n);
+  const satUv = new Float32Array(n * n * 2);
 
   const lotRings = lotFeats
-    .map((f) => ({
+    .map((f, i) => ({
       ring: (f.geometry?.coordinates?.[0] as number[][]) ?? [],
       color: hexRgb(f.properties?.color ?? "#8a9a6b"),
+      id: f.properties?.id ?? `lot-${i}`,
     }))
     .filter((l) => l.ring.length >= 3);
+
+  // bbox del perímetro → espacio UV del drape satelital
+  const fBBox: BBox = { minLng: Infinity, maxLng: -Infinity, minLat: Infinity, maxLat: -Infinity };
+  for (const [x, y] of ring) {
+    if (x < fBBox.minLng) fBBox.minLng = x;
+    if (x > fBBox.maxLng) fBBox.maxLng = x;
+    if (y < fBBox.minLat) fBBox.minLat = y;
+    if (y > fBBox.maxLat) fBBox.maxLat = y;
+  }
+  const fSpanLng = Math.max(fBBox.maxLng - fBBox.minLng, 1e-6);
+  const fSpanLat = Math.max(fBBox.maxLat - fBBox.minLat, 1e-6);
 
   const dxW = WORLD_W / (n - 1);
   const dzW = worldD / (n - 1);
@@ -210,11 +234,14 @@ export function buildTerrainScene(
 
       // color: inside a lot → NDVI ramp color; inside field → musgo; else hypsometric
       let col: [number, number, number];
+      let lot = -1;
       if (pointInRing(lng, lat, ring)) {
+        lot = 0;
         col = hexRgb("#5c7a4a");
-        for (const lot of lotRings) {
-          if (pointInRing(lng, lat, lot.ring)) {
-            col = lot.color;
+        for (let li = 0; li < lotRings.length; li++) {
+          if (pointInRing(lng, lat, lotRings[li].ring)) {
+            col = lotRings[li].color;
+            lot = li + 1;
             break;
           }
         }
@@ -227,6 +254,9 @@ export function buildTerrainScene(
       colors[idx * 4 + 1] = col[1];
       colors[idx * 4 + 2] = col[2];
       colors[idx * 4 + 3] = 1;
+      lotIdx[idx] = lot;
+      satUv[idx * 2] = (lng - fBBox.minLng) / fSpanLng;
+      satUv[idx * 2 + 1] = (fBBox.maxLat - lat) / fSpanLat;
     }
   }
 
@@ -253,7 +283,10 @@ export function buildTerrainScene(
   const tNrm = new Float32Array((tVertCount + extra) * 3);
   const tCol = new Float32Array((tVertCount + extra) * 4);
   const tElv = new Float32Array(tVertCount + extra);
+  const tLot = new Float32Array(tVertCount + extra);
+  const tUv = new Float32Array((tVertCount + extra) * 2);
   tPos.set(positions); tNrm.set(normals); tCol.set(colors); tElv.set(elevs);
+  tLot.set(lotIdx); tUv.set(satUv);
 
   const skirtColor = hexRgb("#5c4a30");
   border.forEach((vi, k) => {
@@ -273,6 +306,9 @@ export function buildTerrainScene(
     tCol[o * 4 + 2] = skirtColor[2];
     tCol[o * 4 + 3] = 1;
     tElv[o] = -9999;
+    tLot[o] = -1;
+    tUv[o * 2] = satUv[vi * 2];
+    tUv[o * 2 + 1] = satUv[vi * 2 + 1];
 
     const k2 = (k + 1) % border.length;
     const top = vi, top2 = border[k2], bot = o, bot2 = skirtBase + k2;
@@ -284,6 +320,8 @@ export function buildTerrainScene(
   const wNrm: number[] = [];
   const wCol: number[] = [];
   const wElv: number[] = [];
+  const wLot: number[] = [];
+  const wUv: number[] = [];
   const wIdx: number[] = [];
 
   const emitWall = (
@@ -298,6 +336,8 @@ export function buildTerrainScene(
       wNrm.push(nx, 0, nz);
       wCol.push(rgb[0], rgb[1], rgb[2], alpha);
       wElv.push(-9999);
+      wLot.push(-1);
+      wUv.push(0, 0);
       return wPos.length / 3 - 1;
     };
     for (let p = 0; p < pts.length - 1; p++) {
@@ -334,6 +374,8 @@ export function buildTerrainScene(
       normals: tNrm,
       colors: tCol,
       elevs: tElv,
+      lotIdx: tLot,
+      satUv: tUv,
       indices: new Uint32Array(idxArr),
     },
     walls: {
@@ -341,6 +383,8 @@ export function buildTerrainScene(
       normals: new Float32Array(wNrm),
       colors: new Float32Array(wCol),
       elevs: new Float32Array(wElv),
+      lotIdx: new Float32Array(wLot),
+      satUv: new Float32Array(wUv),
       indices: new Uint32Array(wIdx),
     },
     worldW: WORLD_W,
@@ -350,5 +394,8 @@ export function buildTerrainScene(
     maxH,
     contourStep: niceStep(reliefDelta / 7),
     region,
+    fieldBBox: fBBox,
+    lotIds: lotRings.map((l) => l.id),
+    lotColors: [hexRgb("#5c7a4a"), ...lotRings.map((l) => l.color)],
   };
 }

@@ -17,6 +17,8 @@ export interface TimelapseAsset {
   resolutionM: number;
   nodata?: string;
   checksum?: string;
+  /** [minLng, minLat, maxLng, maxLat] — geographic extent the tile covers */
+  bbox?: number[];
 }
 
 export interface TimelapseFrameQuality {

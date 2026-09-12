@@ -88,6 +88,7 @@ export function normalizeTimelapseManifest(raw: any): TimelapseManifest {
         resolutionM: 10,
         nodata: a.nodata,
         checksum: a.sha256 || a.checksum,
+        bbox: a.bbox ?? undefined,
       })),
     };
   });
