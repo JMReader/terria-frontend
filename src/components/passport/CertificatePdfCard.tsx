@@ -8,6 +8,7 @@ import { fieldCertificatePdfUrl } from "@/lib/terriaApi";
 interface CertificatePdfCardProps {
   field: FieldItem;
   publicUrl?: string | null;
+  className?: string;
 }
 
 type PdfStatus = "checking" | "ready" | "pending";
@@ -16,7 +17,7 @@ type PdfStatus = "checking" | "ready" | "pending";
  * Card del certificado blockchain PDF: estado del documento y descarga.
  * El PDF del backend incluye content_hash y la URL pública del pasaporte.
  */
-export default function CertificatePdfCard({ field, publicUrl }: CertificatePdfCardProps) {
+export default function CertificatePdfCard({ field, publicUrl, className = "" }: CertificatePdfCardProps) {
   const pdfUrl = fieldCertificatePdfUrl(field.id);
   const [status, setStatus] = useState<PdfStatus>("checking");
 
@@ -34,7 +35,7 @@ export default function CertificatePdfCard({ field, publicUrl }: CertificatePdfC
   }, [pdfUrl]);
 
   return (
-    <div className="rounded-2xl border border-piedra-soft bg-papel p-4">
+    <div className={`rounded-2xl border border-piedra-soft bg-papel p-4 ${className}`}>
       <div className="flex items-center justify-between gap-3">
         <div className="flex min-w-0 items-center gap-3">
           <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-tierra/15 border border-tierra/30">

@@ -28,7 +28,7 @@ export default function PassportDiorama({ field }: PassportDioramaProps) {
   const [fallback, setFallback] = useState<string | null>(null);
 
   return (
-    <div className="relative h-[68vh] min-h-[420px] w-full overflow-hidden rounded-3xl border border-piedra-soft bg-papel shadow-sm">
+    <div className="relative h-full min-h-[420px] w-full overflow-hidden rounded-3xl border border-piedra-soft bg-papel shadow-sm">
       {fallback ? (
         <div className="flex h-full w-full flex-col items-center justify-center gap-2 bg-nube text-center">
           <Move3d className="h-8 w-8 text-piedra" />
