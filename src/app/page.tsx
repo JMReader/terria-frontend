@@ -6,14 +6,13 @@ import { FIELDS_DATA, FieldItem } from "@/data/fieldsData";
 import FloatingIslandHeader from "@/components/FloatingIslandHeader";
 import FieldCardsList from "@/components/FieldCardsList";
 import FieldDetailView from "@/components/FieldDetailView";
-import WebGpuCosmicGrid from "@/components/WebGpuCosmicGrid";
-import TimelapseController from "@/components/timelapse/TimelapseController";
+import FieldExpandedSheet from "@/components/FieldExpandedSheet";
 import Hero from "@/components/landing/Hero";
 import CertificateSection from "@/components/landing/CertificateSection";
 import SiteFooter from "@/components/landing/SiteFooter";
 import { useFieldTimelapse } from "@/hooks/useFieldTimelapse";
 import { DEMO_TIMELAPSE_MANIFEST } from "@/data/timelapseMockData";
-import { Satellite } from "lucide-react";
+import { Satellite, Move3d } from "lucide-react";
 import gsap from "gsap";
 import { useGSAP } from "@gsap/react";
 import { TimelapseManifest } from "@/types/terria";
@@ -23,55 +22,53 @@ gsap.registerPlugin(useGSAP);
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL || "http://127.0.0.1:8000";
 
-// Dynamic import for 3D Three.js canvas to avoid SSR issues
+// Dynamic imports — WebGL/WebGPU canvases can't SSR
 const Planet3D = dynamic(() => import("@/components/Planet3D"), {
   ssr: false,
   loading: () => (
     <div className="flex h-full w-full items-center justify-center bg-nube text-bosque/60 text-xs font-sans">
       <div className="flex flex-col items-center gap-2">
         <Satellite className="h-6 w-6 animate-spin text-musgo" />
-        <span>Cargando mapa interactivo...</span>
+        <span>Cargando mapa de relieve...</span>
       </div>
     </div>
   ),
 });
 
-const Field3DIsoViewer = dynamic(() => import("@/components/Field3DIsoViewer"), {
-  ssr: false,
-  loading: () => (
-    <div className="flex h-full w-full items-center justify-center bg-nube text-bosque/60 text-xs font-sans">
-      <div className="flex flex-col items-center gap-2">
-        <Satellite className="h-6 w-6 animate-spin text-musgo" />
-        <span>Cargando maqueta 3D aislada...</span>
+const FieldTerrainGPU = dynamic(
+  () => import("@/components/terrain/FieldTerrainGPU"),
+  {
+    ssr: false,
+    loading: () => (
+      <div className="flex h-full w-full items-center justify-center bg-nube text-bosque/60 text-xs font-sans">
+        <div className="flex flex-col items-center gap-2">
+          <Move3d className="h-6 w-6 animate-pulse text-musgo" />
+          <span>Preparando terreno 3D...</span>
+        </div>
       </div>
-    </div>
-  ),
-});
+    ),
+  }
+);
 
 export default function Home() {
   const [selectedField, setSelectedField] = useState<FieldItem>(FIELDS_DATA[0]);
   const [isFieldExpanded, setIsFieldExpanded] = useState(false);
-  const [isFieldIsolated3D, setIsFieldIsolated3D] = useState(false);
   const [searchQuery, setSearchQuery] = useState("");
   const [backendFields, setBackendFields] = useState<FieldItem[]>(FIELDS_DATA);
   const [timelapseManifest, setTimelapseManifest] = useState<TimelapseManifest>(DEMO_TIMELAPSE_MANIFEST);
-  const [backendStatus, setBackendStatus] = useState<"loading" | "connected" | "offline">("loading");
+  const [dataSheetOpen, setDataSheetOpen] = useState(false);
+  const [terrainFallback, setTerrainFallback] = useState<string | null>(null);
 
   // Fetch fields and timelapse data from real backend on mount
   useEffect(() => {
     const fetchBackendData = async () => {
       try {
-        // 1. Check health
         const health = await fetch(`${API_URL}/health`, { signal: AbortSignal.timeout(3000) });
         if (!health.ok) throw new Error("backend offline");
 
-        setBackendStatus("connected");
-
-        // 2. Fetch fields list
         const fieldsRes = await fetch(`${API_URL}/v1/fields`);
         if (fieldsRes.ok) {
           const fieldsData = await fieldsRes.json();
-          // Map backend fields to FieldItem shape (fill optional visual props from mock fallback)
           if (Array.isArray(fieldsData) && fieldsData.length > 0) {
             const mapped: FieldItem[] = fieldsData.map((f: any, idx: number) => {
               let lat = f.centroid_lat;
@@ -115,20 +112,19 @@ export default function Home() {
                 boundary: f.boundary,
               };
             });
-            // Combine backend real fields with rich mock catalog fields
             const combinedFields = [
               ...mapped,
               ...FIELDS_DATA.filter((m) => !mapped.some((b) => b.id === m.id)),
             ];
             setBackendFields(combinedFields);
-            setSelectedField(combinedFields[0]);
+            setSelectedField((prev) =>
+              combinedFields.some((f) => f.id === prev.id) ? prev : combinedFields[0]
+            );
 
-            // 3. Fetch timelapses for the first field
             const firstFieldId = mapped[0].id;
             const tlRes = await fetch(`${API_URL}/v1/fields/${firstFieldId}/timelapses`);
             if (tlRes.ok) {
               const datasets = await tlRes.json();
-              // Pick first ready/partial dataset
               const readyDataset = datasets.find(
                 (d: any) => d.status === "ready" || d.status === "partial"
               );
@@ -138,16 +134,13 @@ export default function Home() {
                 );
                 if (manifestRes.ok) {
                   const raw = await manifestRes.json();
-                  const normalized = normalizeTimelapseManifest(raw);
-                  setTimelapseManifest(normalized);
+                  setTimelapseManifest(normalizeTimelapseManifest(raw));
                 }
               }
             }
           }
         }
       } catch {
-        // Backend offline — keep mock data, inform user
-        setBackendStatus("offline");
         console.info("[TERRIA] Backend not reachable — using demo mock data");
       }
     };
@@ -155,29 +148,23 @@ export default function Home() {
     fetchBackendData();
   }, []);
 
-  // Synchronized timelapse engine across 3D and detail views
+  // Synchronized timelapse engine shared by map parcels + detail panel
   const timelapse = useFieldTimelapse({ manifest: timelapseManifest });
 
   const pageContainerRef = useRef<HTMLDivElement>(null);
   const mapViewportRef = useRef<HTMLDivElement>(null);
   const cardsPanelRef = useRef<HTMLDivElement>(null);
 
-  // GSAP Smooth Entrance Animation
   useGSAP(
     () => {
       const tl = gsap.timeline({ defaults: { ease: "power3.out" } });
-
       tl.from(mapViewportRef.current, {
         scale: 0.97,
         autoAlpha: 0,
         duration: 0.6,
       }).from(
         cardsPanelRef.current,
-        {
-          x: 25,
-          autoAlpha: 0,
-          duration: 0.6,
-        },
+        { x: 25, autoAlpha: 0, duration: 0.6 },
         "-=0.4"
       );
     },
@@ -186,7 +173,8 @@ export default function Home() {
 
   const handleSelectField = async (field: FieldItem) => {
     setSelectedField(field);
-    setIsFieldExpanded(true); // Smoothly expands into the second view (detailed passport)
+    setIsFieldExpanded(true);
+    setTerrainFallback(null);
 
     if (mapViewportRef.current) {
       gsap.fromTo(
@@ -196,7 +184,6 @@ export default function Home() {
       );
     }
 
-    // Attempt to load field's specific timelapse dataset from backend
     try {
       const tlRes = await fetch(`${API_URL}/v1/fields/${field.id}/timelapses`);
       if (tlRes.ok) {
@@ -221,8 +208,7 @@ export default function Home() {
 
   const handleBackToCatalog = () => {
     setIsFieldExpanded(false);
-    setIsFieldIsolated3D(false);
-
+    setDataSheetOpen(false);
     if (mapViewportRef.current) {
       gsap.fromTo(
         mapViewportRef.current,
@@ -240,25 +226,15 @@ export default function Home() {
       {/* ── LANDING: hero de marca ─────────────────────────────── */}
       <Hero />
 
-      {/* ── EXPLORADOR: la app territorial existente ───────────── */}
+      {/* ── EXPLORADOR: mapa de relieve + terreno 3D ───────────── */}
       <section
         id="explorador"
         className="relative flex h-screen max-h-screen flex-col overflow-hidden"
       >
-        {/* Subtle WebGPU background canvas */}
-        <WebGpuCosmicGrid />
-
-        {/* Header with its own layout space — no overlap */}
         <div className="relative z-50 shrink-0 px-4 sm:px-6 pt-3 pb-2">
-          <FloatingIslandHeader
-            onSearchChange={(query) => setSearchQuery(query)}
-            selectedField={selectedField}
-            totalFields={backendFields.length}
-            backendStatus={backendStatus}
-          />
+          <FloatingIslandHeader onSearchChange={setSearchQuery} />
         </div>
 
-        {/* Section eyebrow */}
         <div className="relative z-10 flex items-baseline justify-between px-4 pb-2 sm:px-6">
           <span className="font-mono text-[10px] font-bold uppercase tracking-[0.3em] text-musgo">
             Explorador territorial
@@ -268,81 +244,92 @@ export default function Home() {
           </span>
         </div>
 
-        {/* Main Two-Column Layout: Left Map/Planet + Right Field Cards */}
         <main className="relative z-10 flex-1 min-h-0 w-full grid grid-cols-1 lg:grid-cols-12 gap-4 px-4 sm:px-6 pb-3 overflow-hidden">
-          {/* LEFT COLUMN (7 / 12 cols): Clean 3D Map / Planet or Isolated 3D Field Viewport */}
+          {/* LEFT: mapa de relieve — al seleccionar se transforma en terreno 3D */}
           <div
             ref={mapViewportRef}
             className="lg:col-span-7 xl:col-span-8 h-full min-h-0 flex flex-col relative rounded-3xl border border-piedra-soft bg-papel shadow-sm overflow-hidden"
           >
-          <div className="relative flex-1 w-full h-full min-h-0">
-            {isFieldIsolated3D ? (
-              <Field3DIsoViewer
-                field={selectedField}
-                onBackToMap={() => setIsFieldIsolated3D(false)}
-                className="h-full w-full"
-              />
-            ) : (
+            <div className="relative flex-1 w-full h-full min-h-0">
               <Planet3D
                 embedded={true}
                 selectedField={selectedField}
                 fields={backendFields}
                 isExpanded={isFieldExpanded}
                 onSelectField={handleSelectField}
-                onIsolateField={() => setIsFieldIsolated3D(true)}
                 timelapse={timelapse}
                 className="h-full w-full"
               />
-            )}
 
-            {/* Floating Timelapse Controller dock over the 3D viewport when field is active */}
-            {isFieldExpanded && (
-              <div className="absolute bottom-4 left-4 right-4 z-30 pointer-events-auto">
-                <TimelapseController
-                  dates={timelapse.dates}
-                  dateIndex={timelapse.dateIndex}
-                  onDateIndexChange={timelapse.setDateIndex}
-                  timelineState={timelapse.timelineState}
-                  isPlaying={timelapse.isPlaying}
-                  onTogglePlay={() => timelapse.setIsPlaying(!timelapse.isPlaying)}
-                  speed={timelapse.speed}
-                  onSpeedChange={timelapse.setSpeed}
-                  activeLayer={timelapse.activeLayer}
-                  onLayerChange={timelapse.setActiveLayer}
-                  onStepNext={timelapse.stepNext}
-                  onStepPrev={timelapse.stepPrev}
-                  onJumpObservation={timelapse.jumpToObservation}
-                />
-              </div>
+              {/* Terreno 3D real — WebGPU sobre DEM; fallback = mapa inclinado */}
+              {isFieldExpanded && !terrainFallback && (
+                <div className="absolute inset-0 z-20">
+                  <FieldTerrainGPU
+                    key={selectedField.id}
+                    field={selectedField}
+                    onFallback={() => setTerrainFallback("gpu")}
+                    className="h-full w-full"
+                  />
+                </div>
+              )}
+
+              {/* Tira de información — lo único sobre la escena */}
+              {isFieldExpanded && (
+                <div className="absolute inset-x-0 bottom-0 z-30 flex items-center justify-between gap-3 border-t border-piedra-soft/70 bg-papel/85 px-4 py-2.5 backdrop-blur-sm">
+                  <div className="flex min-w-0 items-center gap-3">
+                    <button
+                      onClick={handleBackToCatalog}
+                      className="shrink-0 text-xs font-mono font-bold text-bosque/70 hover:text-bosque transition-colors cursor-pointer"
+                    >
+                      ‹ Mapa
+                    </button>
+                    <span className="truncate text-sm font-semibold text-bosque">
+                      {selectedField.name}
+                    </span>
+                  </div>
+                  <div className="flex shrink-0 items-center gap-3 text-[11px] font-mono text-bosque/70 tabular-nums">
+                    <span>{selectedField.hectares} ha</span>
+                    <span>NDVI {selectedField.ndvi.toFixed(2)}</span>
+                    <span className="hidden sm:inline text-piedra">
+                      {terrainFallback ? "relieve inclinado" : "arrastrá para orbitar"}
+                    </span>
+                  </div>
+                </div>
+              )}
+            </div>
+          </div>
+
+          {/* RIGHT: lista de campos o detalle */}
+          <div
+            ref={cardsPanelRef}
+            className="lg:col-span-5 xl:col-span-4 h-full min-h-0 flex flex-col overflow-hidden"
+          >
+            {isFieldExpanded ? (
+              <FieldDetailView
+                field={selectedField}
+                onBack={handleBackToCatalog}
+                onExpandData={() => setDataSheetOpen(true)}
+                sharedTimelapse={timelapse}
+              />
+            ) : (
+              <FieldCardsList
+                selectedField={selectedField}
+                onSelectField={handleSelectField}
+                filterQuery={searchQuery}
+                fields={backendFields}
+                className="h-full min-h-0"
+              />
             )}
           </div>
-        </div>
-
-        {/* RIGHT COLUMN (5 / 12 cols): Clean White Field Cards Feed or Expanded Detail View */}
-        <div
-          ref={cardsPanelRef}
-          className="lg:col-span-5 xl:col-span-4 h-full min-h-0 flex flex-col overflow-hidden"
-        >
-          {isFieldExpanded ? (
-            <FieldDetailView
-              field={selectedField}
-              onBack={handleBackToCatalog}
-              onToggleIsolate3D={() => setIsFieldIsolated3D(!isFieldIsolated3D)}
-              isIsolated3D={isFieldIsolated3D}
-              sharedTimelapse={timelapse}
-            />
-          ) : (
-            <FieldCardsList
-              selectedField={selectedField}
-              onSelectField={handleSelectField}
-              filterQuery={searchQuery}
-              fields={backendFields}
-              className="h-full min-h-0"
-            />
-          )}
-        </div>
         </main>
       </section>
+
+      {/* Sheet ampliada: Datos / Futuro / Solana */}
+      <FieldExpandedSheet
+        field={selectedField}
+        open={dataSheetOpen && isFieldExpanded}
+        onClose={() => setDataSheetOpen(false)}
+      />
 
       {/* ── CERTIFICADO + SISTEMA DE VERSIONES ─────────────────── */}
       <CertificateSection field={selectedField} />

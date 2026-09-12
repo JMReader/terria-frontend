@@ -3,16 +3,12 @@
 import React, { useEffect, useRef } from "react";
 import { FieldItem, FIELDS_DATA } from "@/data/fieldsData";
 import FieldCard from "./FieldCard";
-import {
-  Filter,
-  MapPin,
-} from "lucide-react";
+import { Filter } from "lucide-react";
 import gsap from "gsap";
 
 interface FieldCardsListProps {
   selectedField: FieldItem;
   onSelectField: (field: FieldItem) => void;
-  onInspect3D?: (field: FieldItem) => void;
   filterQuery?: string;
   className?: string;
   /** Pass backend-fetched fields to override the local FIELDS_DATA mock */
@@ -22,7 +18,6 @@ interface FieldCardsListProps {
 export default function FieldCardsList({
   selectedField,
   onSelectField,
-  onInspect3D,
   filterQuery = "",
   className = "",
   fields,
@@ -35,7 +30,9 @@ export default function FieldCardsList({
     const q = filterQuery.toLowerCase();
     return sourceData.filter((field) => {
       const matchesName = field.name.toLowerCase().includes(q);
-      const matchesLoc = (field.locality ?? "").toLowerCase().includes(q) || (field.province ?? "").toLowerCase().includes(q);
+      const matchesLoc =
+        (field.locality ?? "").toLowerCase().includes(q) ||
+        (field.province ?? "").toLowerCase().includes(q);
       const matchesCrop = (field.primaryCrop ?? field.crop ?? "").toLowerCase().includes(q);
       const matchesSoil = (field.soilSeries ?? field.soilType ?? "").toLowerCase().includes(q);
       const matchesTags = (field.tags ?? []).some((t: string) => t.toLowerCase().includes(q));
@@ -49,25 +46,20 @@ export default function FieldCardsList({
       if (cards.length > 0) {
         gsap.fromTo(
           cards,
-          { autoAlpha: 0, y: 15 },
-          {
-            autoAlpha: 1,
-            y: 0,
-            stagger: 0.06,
-            duration: 0.4,
-            ease: "power2.out",
-          }
+          { autoAlpha: 0, y: 12 },
+          { autoAlpha: 1, y: 0, stagger: 0.05, duration: 0.35, ease: "power2.out" }
         );
       }
     }
   }, [filteredFields]);
 
   return (
-    <div className={`flex flex-col h-full rounded-3xl border border-piedra-soft bg-papel shadow-sm overflow-hidden ${className}`}>
-      {/* Scrollable Cards Container */}
+    <div
+      className={`flex h-full flex-col overflow-hidden rounded-3xl border border-piedra-soft bg-papel shadow-sm ${className}`}
+    >
       <div
         ref={listRef}
-        className="flex-1 min-h-0 overflow-y-auto p-4 space-y-3 custom-scrollbar"
+        className="flex-1 min-h-0 divide-y divide-piedra-soft/70 overflow-y-auto py-1 custom-scrollbar"
       >
         {filteredFields.length === 0 ? (
           <div className="flex flex-col items-center justify-center py-12 text-center text-piedra space-y-2">
@@ -83,21 +75,9 @@ export default function FieldCardsList({
               field={field}
               isSelected={selectedField.id === field.id}
               onSelect={onSelectField}
-              onInspect3D={onInspect3D}
             />
           ))
         )}
-      </div>
-
-      {/* Selected Field Quick Footer Stats */}
-      <div className="p-3.5 border-t border-piedra-soft bg-nube shrink-0 flex items-center justify-between text-xs text-bosque/70">
-        <span className="flex items-center gap-1.5 truncate">
-          <MapPin className="h-3.5 w-3.5 text-musgo" />
-          <span>Fijado: <strong className="text-bosque">{selectedField.name}</strong></span>
-        </span>
-        <span className="font-semibold text-bosque shrink-0">
-          {selectedField.hectares} ha • {selectedField.rentQqSoja} qq Soja
-        </span>
       </div>
     </div>
   );

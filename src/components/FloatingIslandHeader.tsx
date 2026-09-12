@@ -1,30 +1,23 @@
 "use client";
 
-import React, { useState, useRef, useEffect, useCallback } from "react";
-import { Search, X, Mic, Command } from "lucide-react";
+import React, { useState, useRef, useEffect } from "react";
+import { Search, X, Command } from "lucide-react";
 import gsap from "gsap";
 import { useGSAP } from "@gsap/react";
-import { FieldItem } from "@/data/fieldsData";
 import BrandMark from "@/components/brand/BrandMark";
 
 gsap.registerPlugin(useGSAP);
 
 interface FloatingIslandHeaderProps {
   onSearchChange?: (query: string) => void;
-  onRegisterField?: () => void;
-  selectedField?: FieldItem;
-  totalFields?: number;
   className?: string;
-  backendStatus?: "loading" | "connected" | "offline";
 }
 
 export default function FloatingIslandHeader({
   onSearchChange,
-  onRegisterField,
   className = "",
 }: FloatingIslandHeaderProps) {
   const [query, setQuery] = useState("");
-  const [isListening, setIsListening] = useState(false);
   const [isFocused, setIsFocused] = useState(false);
 
   const headerScopeRef = useRef<HTMLDivElement>(null);
@@ -62,10 +55,6 @@ export default function FloatingIslandHeader({
     setQuery("");
     if (onSearchChange) onSearchChange("");
     inputRef.current?.focus();
-  };
-
-  const toggleMic = () => {
-    setIsListening((prev) => !prev);
   };
 
   return (
@@ -121,30 +110,7 @@ export default function FloatingIslandHeader({
                   </kbd>
                 )}
 
-                <button
-                  onClick={toggleMic}
-                  type="button"
-                  title={isListening ? "Detener voz" : "Búsqueda por voz"}
-                  className={`p-1.5 rounded-full transition-colors cursor-pointer ${
-                    isListening
-                      ? "bg-tierra/20 text-tierra-deep animate-pulse"
-                      : "text-piedra hover:text-bosque hover:bg-piedra-soft/60"
-                  }`}
-                >
-                  <Mic className="h-3.5 w-3.5" />
-                </button>
               </div>
-            </div>
-
-            {/* Right: Botón Registra tu campo */}
-            <div className="flex items-center shrink-0 pr-1">
-              <button
-                type="button"
-                onClick={onRegisterField}
-                className="rounded-full bg-bosque hover:bg-bosque-deep text-nube text-xs font-bold px-4 py-2 shadow-sm transition-all cursor-pointer whitespace-nowrap active:scale-95"
-              >
-                Registra tu campo
-              </button>
             </div>
           </div>
         </div>
