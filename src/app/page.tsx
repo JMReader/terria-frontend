@@ -58,6 +58,7 @@ export default function Home() {
   const [timelapseManifest, setTimelapseManifest] = useState<TimelapseManifest>(DEMO_TIMELAPSE_MANIFEST);
   const [dataSheetOpen, setDataSheetOpen] = useState(false);
   const [terrainFallback, setTerrainFallback] = useState<string | null>(null);
+  const [terrainReveal, setTerrainReveal] = useState(false);
 
   // Fetch fields and timelapse data from real backend on mount
   useEffect(() => {
@@ -112,13 +113,10 @@ export default function Home() {
                 boundary: f.boundary,
               };
             });
-            const combinedFields = [
-              ...mapped,
-              ...FIELDS_DATA.filter((m) => !mapped.some((b) => b.id === m.id)),
-            ];
-            setBackendFields(combinedFields);
+            // Solo los campos que existen en la BD — sin mezclar el catálogo mock
+            setBackendFields(mapped);
             setSelectedField((prev) =>
-              combinedFields.some((f) => f.id === prev.id) ? prev : combinedFields[0]
+              mapped.some((f) => f.id === prev.id) ? prev : mapped[0]
             );
 
             const firstFieldId = mapped[0].id;
@@ -175,6 +173,9 @@ export default function Home() {
     setSelectedField(field);
     setIsFieldExpanded(true);
     setTerrainFallback(null);
+    // Si ya estábamos expandidos el mapa está tapado por la escena → reveal inmediato.
+    // Si venimos del catálogo, el terreno aparece cuando el flyTo cinematográfico aterriza.
+    setTerrainReveal(isFieldExpanded);
 
     if (mapViewportRef.current) {
       gsap.fromTo(
@@ -209,6 +210,7 @@ export default function Home() {
   const handleBackToCatalog = () => {
     setIsFieldExpanded(false);
     setDataSheetOpen(false);
+    setTerrainReveal(false);
     if (mapViewportRef.current) {
       gsap.fromTo(
         mapViewportRef.current,
@@ -244,7 +246,7 @@ export default function Home() {
           </span>
         </div>
 
-        <main className="relative z-10 flex-1 min-h-0 w-full grid grid-cols-1 lg:grid-cols-12 gap-4 px-4 sm:px-6 pb-3 overflow-hidden">
+        <main className="relative z-10 flex-1 min-h-0 w-full grid grid-cols-1 grid-rows-[minmax(0,7fr)_minmax(0,5fr)] lg:grid-rows-1 lg:grid-cols-12 gap-4 px-4 sm:px-6 pb-3 overflow-hidden">
           {/* LEFT: mapa de relieve — al seleccionar se transforma en terreno 3D */}
           <div
             ref={mapViewportRef}
@@ -257,13 +259,14 @@ export default function Home() {
                 fields={backendFields}
                 isExpanded={isFieldExpanded}
                 onSelectField={handleSelectField}
+                onDiveEnd={() => setTerrainReveal(true)}
                 timelapse={timelapse}
                 className="h-full w-full"
               />
 
-              {/* Terreno 3D real — WebGPU sobre DEM; fallback = mapa inclinado */}
-              {isFieldExpanded && !terrainFallback && (
-                <div className="absolute inset-0 z-20">
+              {/* Terreno 3D real — WebGPU sobre DEM; aparece al aterrizar el flyTo */}
+              {isFieldExpanded && terrainReveal && !terrainFallback && (
+                <div className="absolute inset-0 z-20 animate-in fade-in duration-300">
                   <FieldTerrainGPU
                     key={selectedField.id}
                     field={selectedField}

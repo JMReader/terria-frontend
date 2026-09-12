@@ -15,6 +15,7 @@ export interface Planet3DProps {
   isExpanded?: boolean;
   className?: string;
   onSelectField?: (field: FieldItem) => void;
+  onDiveEnd?: () => void;
   timelapse?: ReturnType<typeof useFieldTimelapse>;
   fields?: FieldItem[];
 }
@@ -79,6 +80,7 @@ export default function Planet3D({
   isExpanded = false,
   className = "",
   onSelectField,
+  onDiveEnd,
   timelapse,
   fields,
 }: Planet3DProps) {
@@ -90,9 +92,12 @@ export default function Planet3D({
   const fieldsList = fields && fields.length > 0 ? fields : FIELDS_DATA;
   const fieldsListRef = useRef(fieldsList);
   const onSelectRef = useRef(onSelectField);
+  const onDiveEndRef = useRef(onDiveEnd);
+  const diveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   useEffect(() => {
     fieldsListRef.current = fieldsList;
     onSelectRef.current = onSelectField;
+    onDiveEndRef.current = onDiveEnd;
   });
 
   // Construct GeoJSON FeatureCollection for field cadastral parcels & crop sectors
@@ -255,14 +260,6 @@ export default function Planet3D({
       } catch { /* noop */ }
     });
 
-    // Minimal tooltip
-    const hoverPopup = new maplibregl.Popup({
-      closeButton: false,
-      closeOnClick: false,
-      offset: 14,
-      className: "terria-tip",
-    });
-
     map.on("click", (e: maplibregl.MapMouseEvent) => {
       if (!map.isStyleLoaded || !map.isStyleLoaded()) return;
       try {
@@ -281,6 +278,7 @@ export default function Planet3D({
       } catch { /* noop */ }
     });
 
+    // Cursor estable sobre campos del portfolio — sin popups (evita jitter)
     map.on("mousemove", (e: maplibregl.MapMouseEvent) => {
       if (!map.isStyleLoaded || !map.isStyleLoaded()) return;
       try {
@@ -290,29 +288,13 @@ export default function Planet3D({
         if (!layers.length) return;
         const feats = map.queryRenderedFeatures(e.point, { layers });
         const f = feats?.[0];
-        if (f) {
-          const props = f.properties || {};
-          const isPortfolio = props.isPortfolio === true || props.isPortfolio === "true";
-          map.getCanvas().style.cursor = isPortfolio ? "pointer" : "default";
-          hoverPopup
-            .setLngLat(e.lngLat)
-            .setHTML(
-              `<div style="padding:6px 10px;font-family:system-ui;font-size:11px;line-height:1.35;">
-                <div style="font-weight:700;color:#1c3a2e;">${props.name || props.fieldName || "Lote"}</div>
-                <div style="color:rgba(28,58,46,0.65);">${props.crop || ""} · <b>${props.hectares || 0} ha</b>${props.currentNdvi ? ` · NDVI ${props.currentNdvi}` : ""}</div>
-                ${isPortfolio ? `<div style="color:#4a6b46;font-size:10px;font-weight:600;margin-top:2px;">Clic → terreno 3D</div>` : ""}
-              </div>`
-            )
-            .addTo(map);
-        } else {
-          map.getCanvas().style.cursor = "";
-          hoverPopup.remove();
-        }
+        const isPortfolio =
+          f && (f.properties?.isPortfolio === true || f.properties?.isPortfolio === "true");
+        map.getCanvas().style.cursor = isPortfolio ? "pointer" : "";
       } catch { /* noop */ }
     });
     map.on("mouseout", () => {
       map.getCanvas().style.cursor = "";
-      hoverPopup.remove();
     });
 
     return () => {
@@ -355,22 +337,42 @@ export default function Planet3D({
     });
   }, [fieldsList, selectedField?.id]);
 
-  // Dive on expand, back to overview on collapse
+  // Dive cinematográfico al expandir (la escena 3D aparece cuando la cámara aterriza);
+  // al colapsar vuelve a la vista general
   useEffect(() => {
     const map = mapRef.current;
     if (!map) return;
+
+    if (diveTimerRef.current) {
+      clearTimeout(diveTimerRef.current);
+      diveTimerRef.current = null;
+    }
+
     if (isExpanded && selectedField) {
       map.flyTo({
         center: [selectedField.lng, selectedField.lat],
-        zoom: 13.6,
-        pitch: 62,
-        bearing: -18,
-        speed: 0.9,
-        curve: 1.6,
+        zoom: 15.2,
+        pitch: 56,
+        bearing: -12,
+        duration: 1600,
+        essential: true,
       });
-    } else if (!isExpanded) {
-      map.flyTo({ ...OVERVIEW, bearing: 0, pitch: 0, speed: 0.8 });
+      const reveal = () => {
+        if (diveTimerRef.current) {
+          clearTimeout(diveTimerRef.current);
+          diveTimerRef.current = null;
+        }
+        map.off("moveend", reveal);
+        onDiveEndRef.current?.();
+      };
+      map.once("moveend", reveal);
+      diveTimerRef.current = setTimeout(reveal, 1900); // red de seguridad
+      return () => {
+        map.off("moveend", reveal);
+        if (diveTimerRef.current) clearTimeout(diveTimerRef.current);
+      };
     }
+    map.flyTo({ ...OVERVIEW, bearing: 0, pitch: 0, duration: 1400, essential: true });
   }, [isExpanded, selectedField]);
 
   return (
