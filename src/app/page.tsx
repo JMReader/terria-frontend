@@ -8,7 +8,6 @@ import FieldCardsList from "@/components/FieldCardsList";
 import FieldDetailView from "@/components/FieldDetailView";
 import FieldExpandedSheet from "@/components/FieldExpandedSheet";
 import Hero from "@/components/landing/Hero";
-import CertificateSection from "@/components/landing/CertificateSection";
 import SiteFooter from "@/components/landing/SiteFooter";
 import { useFieldTimelapse } from "@/hooks/useFieldTimelapse";
 import { DEMO_TIMELAPSE_MANIFEST } from "@/data/timelapseMockData";
@@ -333,9 +332,6 @@ export default function Home() {
         open={dataSheetOpen && isFieldExpanded}
         onClose={() => setDataSheetOpen(false)}
       />
-
-      {/* ── CERTIFICADO + SISTEMA DE VERSIONES ─────────────────── */}
-      <CertificateSection field={selectedField} />
 
       <SiteFooter />
     </div>

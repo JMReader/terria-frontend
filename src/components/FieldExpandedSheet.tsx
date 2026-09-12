@@ -17,10 +17,11 @@ import { DEMO_SOLANA_CERTIFICATION } from "@/data/timelapseMockData";
 import MetricStatBox from "@/components/ui/MetricStatBox";
 import SolanaAuditCard from "@/components/certification/SolanaAuditCard";
 import ValuationPanel from "@/components/valuation/ValuationPanel";
+import WhatIfPanel from "@/components/what_if/WhatIfPanel";
 
 gsap.registerPlugin(useGSAP);
 
-type SheetTab = "datos" | "future" | "audit";
+type SheetTab = "datos" | "future" | "what_if" | "audit";
 
 export interface FieldExpandedSheetProps {
   field: FieldItem;
@@ -105,6 +106,7 @@ export default function FieldExpandedSheet({ field, open, onClose }: FieldExpand
         <div className="shrink-0 px-4 sm:px-5 pt-3 pb-2 flex items-center gap-1 border-b border-piedra-soft">
           {tabBtn("datos", "Datos")}
           {tabBtn("future", "Futuro")}
+          {tabBtn("what_if", "What-If")}
           {tabBtn("audit", "Solana")}
         </div>
 
@@ -189,6 +191,8 @@ export default function FieldExpandedSheet({ field, open, onClose }: FieldExpand
           )}
 
           {tab === "future" && <ValuationPanel field={field} />}
+
+          {tab === "what_if" && <WhatIfPanel field={field} />}
 
           {tab === "audit" && (
             <div className="space-y-4">
