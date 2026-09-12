@@ -1,0 +1,245 @@
+{
+  "$schema": "functional-spec/v1",
+  "feature_id": "parcel-digital-passport",
+  "title": "Pasaporte Digital de Parcela — Catálogo simplificado, vista completa por ID con todas las features (diorama 3D, timelapse, futurología, what-if y certificado blockchain) y compartición controlada por el dueño",
+  "version": "1.0.0",
+  "status": "DRAFT — awaiting user approval (Gate 1)",
+
+  "product_context": {
+    "summary": "Hoy el explorador concentra todo en una sola pantalla: el listado de parcelas muestra tarjetas con datos de negocio y el detalle vive embebido en el panel derecho del mapa, sin URL propia ni posibilidad de compartirse. Esta feature invierte el modelo: el catálogo pasa a ser un índice mínimo y escaneable, y cada parcela gana una página propia, direccionable por ID (/parcela/[id]), que reúne TODAS las features del gemelo digital — diorama de terreno real, timelapse satelital, futurología de valor (proyección a N años), simulador what-if multicultivo y auditoría blockchain (Solana). El dueño de la parcela controla esa vista completa: decide publicarla y con quién compartirla mediante un link público de solo lectura (/p/[slug]). La página pública es el acompañamiento digital del PDF blockchain que se está generando en el backend: el certificado en papel apunta (vía URL/QR) a esta vista viva.",
+    "motivation": [
+      "El listado actual compite con el mapa y expone datos que solo deberían verse en el detalle.",
+      "Sin URL por parcela no hay forma de compartir, linkear ni anclar el certificado blockchain a una vista viva.",
+      "Las features más valiosas (futurología, what-if, auditoría Solana) están escondidas dentro de un sheet lateral que no se puede compartir ni indexar.",
+      "El PDF blockchain necesita un destino web verificable que muestre la misma evidencia en forma interactiva."
+    ],
+    "relationship_with_existing_views": "El explorador (mapa de relieve + terreno 3D inline) se conserva como experiencia de descubrimiento: los pines siguen haciendo flyTo y revelando la maqueta. Lo que cambia es que el panel derecho deja de intentar contener todo — muestra identidad mínima + CTA 'Abrir pasaporte' — y la vista completa migra a su propia ruta."
+  },
+
+  "scope": {
+    "in": [
+      "Catálogo de parcelas simplificado: cada fila del listado muestra solo punto NDVI, nombre, localidad y hectáreas (se eliminan cultivo, NDVI numérico y cualquier dato analítico del índice).",
+      "Ruta direccionable por parcela `/parcela/[id]` (App Router de Next.js 16) que renderiza el Pasaporte Digital completo con todas las features.",
+      "Sección Diorama dentro del pasaporte: maqueta 3D de terreno real (FieldTerrainGPU / vgpu WebGPU con DEM) como hero visual de la página, con fallback MapLibre pitch+terrain.",
+      "Sección Timelapse dentro del pasaporte: NDVI medio, clima diario, sparkline NDVI y controlador temporal completos.",
+      "Sección Futurología dentro del pasaporte: ValuationPanel con proyección de valor a N años, drivers (logístico, agronómico, mercado) y curva de proyección.",
+      "Sección What-If dentro del pasaporte: WhatIfPanel con simulador contrafáctico multicultivo, ranking y métricas de lotes gemelos.",
+      "Sección Certificado dentro del pasaporte: auditoría Solana (SolanaAuditCard) + tarjeta de enlace/descarga del PDF blockchain del backend.",
+      "Modo dueño (owner): controles de compartición — publicar/despublicar, copiar link público, estado de visibilidad.",
+      "Ruta pública de solo lectura `/p/[slug]` alimentada por `public_slug`/`is_published` del backend, sin controles de gestión ni datos privados.",
+      "Metadata OpenGraph por parcela en la ruta pública (título, descripción, imagen) para que el link compartido y el QR del PDF desplieguen preview rico.",
+      "Fallback a datos mock (FIELDS_DATA + manifests demo) cuando el backend no responde, siguiendo el patrón ya establecido en useFieldValuation/useFieldWhatIf.",
+      "Navegación: CTA 'Abrir pasaporte digital' desde el explorador y 'Volver al explorador' desde el pasaporte."
+    ],
+    "out": [
+      "Autenticación de usuarios / login (el control de 'dueño' se modela como flag del payload mientras no exista auth; la seguridad real del endpoint de publish es responsabilidad del backend).",
+      "Edición de datos de la parcela (geometría, cultivos, nombre) — el pasaporte es de solo lectura salvo el switch de publicación.",
+      "Generación del PDF blockchain en sí (pertenece al backend; aquí solo se consume el endpoint).",
+      "Tokens de compartición con expiración o permisos por persona (fase 2: solo link público publicado/revocable).",
+      "Cambios en la landing (Hero, CertificateSection, SiteFooter)."
+    ]
+  },
+
+  "domain_concepts": {
+    "catalogo_minimo": {
+      "definition": "Índice de parcelas del explorador reducido a lo escaneable: dot de estado NDVI, nombre, localidad y hectáreas. Su única decisión es '¿entro a esta parcela?'.",
+      "attributes": ["nombre", "localidad", "hectareas", "ndvi_dot"]
+    },
+    "pasaporte_digital": {
+      "definition": "Página completa y direccionable de una parcela (/parcela/[id]). Documento vivo que presenta toda la evidencia del gemelo digital en secciones ordenadas: identidad verificada, diorama 3D, timelapse satelital, futurología de valor, simulador what-if y certificado blockchain.",
+      "sections": [
+        { "id": "identidad", "name": "Identidad & Verificación", "focus": "Nombre, localización, superficie, badge de verificación y estado de publicación." },
+        { "id": "diorama", "name": "Diorama 3D", "focus": "Maqueta de terreno real del campo (DEM + vgpu) orbitable; la firma visual del pasaporte." },
+        { "id": "timelapse", "name": "Timelapse Satelital", "focus": "Serie temporal NDVI + clima diario con reproductor; evidencia del comportamiento real del lote." },
+        { "id": "futurologia", "name": "Futurología de Valor", "focus": "Proyección de valor de la tierra a N años con drivers auditables (logística, tendencia agronómica, mercado)." },
+        { "id": "what_if", "name": "Simulador What-If", "focus": "Ranking contrafáctico de cultivos alternativos con margen neto proyectado y lotes gemelos." },
+        { "id": "certificado", "name": "Certificado Blockchain", "focus": "Hash de contenido, auditoría en Solana y link/QR al PDF blockchain generado por el backend." }
+      ]
+    },
+    "vista_publica_compartida": {
+      "definition": "Réplica de solo lectura del pasaporte en /p/[slug], habilitada cuando el dueño publica la parcela (is_published + public_slug del backend). Mismo layout, sin controles de gestión ni datos que el owner marcó como privados.",
+      "attributes": ["solo_lectura", "slug_publico", "og_metadata", "revocable"]
+    },
+    "companero_pdf_blockchain": {
+      "definition": "El PDF de certificación blockchain que el backend genera por parcela. El pasaporte público es su contraparte interactiva: el PDF lleva URL/QR al pasaporte y el pasaporte enlaza al PDF.",
+      "touchpoints": ["botón 'Descargar certificado PDF' en sección Certificado", "URL pública impresa en el PDF", "content_hash consistente entre ambos"]
+    }
+  },
+
+  "user_journeys": [
+    {
+      "id": "UJ-01",
+      "title": "Catálogo simplificado como índice",
+      "actor": "Usuario explorando parcelas",
+      "steps": [
+        "El usuario abre el explorador y ve el mapa de relieve con la lista de parcelas a la derecha.",
+        "Cada fila muestra únicamente: dot NDVI, nombre, localidad y hectáreas — nada de cultivo, scores ni métricas adicionales.",
+        "Al hacer clic en una parcela (fila o pin), el mapa ejecuta el flyTo cinematográfico y revela la maqueta 3D inline como hoy.",
+        "El panel derecho muestra solo identidad mínima (nombre, localidad, ha, badge) y un CTA prominente 'Abrir pasaporte digital'.",
+        "Al activar el CTA, navega a /parcela/[id]."
+      ],
+      "acceptance_criteria": [
+        {
+          "id": "AC-01.1",
+          "given": "El explorador está cargado con N parcelas",
+          "when": "El usuario recorre el listado",
+          "then": "Cada fila expone como máximo dot NDVI + nombre + localidad + hectáreas; ninguna métrica analítica ni tag de negocio."
+        },
+        {
+          "id": "AC-01.2",
+          "given": "Una parcela seleccionada en el explorador",
+          "when": "El usuario activa 'Abrir pasaporte digital'",
+          "then": "La URL cambia a /parcela/{id} y se renderiza la página completa del pasaporte."
+        }
+      ]
+    },
+    {
+      "id": "UJ-02",
+      "title": "Consulta de parcela por ID — vista completa con todas las features",
+      "actor": "Dueño / Inversor / Evaluador",
+      "steps": [
+        "El usuario llega a /parcela/{id} (por navegación interna o URL directa).",
+        "La cabecera muestra identidad de la parcela, badge de verificación y estado de publicación.",
+        "El hero de la página es el diorama 3D del terreno real (WebGPU/DEM), orbitable.",
+        "Haciendo scroll (o desde la navegación de secciones) accede a: Timelapse (NDVI+clima+reproductor), Futurología (proyección de valor a N años), What-If (ranking de cultivos) y Certificado (auditoría Solana + PDF blockchain).",
+        "Cada sección reutiliza los hooks/paneles ya existentes y muestra su fuente de datos (live/demo)."
+      ],
+      "acceptance_criteria": [
+        {
+          "id": "AC-02.1",
+          "given": "Un id de parcela válido",
+          "when": "Se carga /parcela/{id}",
+          "then": "La página muestra las 6 secciones del pasaporte en orden: identidad, diorama, timelapse, futurología, what-if, certificado."
+        },
+        {
+          "id": "AC-02.2",
+          "given": "El pasaporte abierto",
+          "when": "El usuario reproduce el timelapse",
+          "then": "NDVI, clima diario y sparkline responden como en la vista embebida actual (mismo engine useFieldTimelapse)."
+        },
+        {
+          "id": "AC-02.3",
+          "given": "Backend offline",
+          "when": "Se abre /parcela/{id} con id existente en el mock",
+          "then": "La página renderiza igual con datos demo y etiqueta de fuente 'demo' visible en las secciones que la reportan."
+        },
+        {
+          "id": "AC-02.4",
+          "given": "Un id inexistente",
+          "when": "Se carga /parcela/{id}",
+          "then": "Se muestra un estado 404/'parcela no encontrada' limpio con link de retorno al explorador."
+        }
+      ]
+    },
+    {
+      "id": "UJ-03",
+      "title": "El dueño decide con quién compartir el pasaporte",
+      "actor": "Dueño de la parcela",
+      "steps": [
+        "En la cabecera del pasaporte (modo owner) ve el control 'Compartir' con el estado actual (Privada / Pública).",
+        "Al publicar, el backend marca is_published y devuelve/confirma el public_slug; el control muestra la URL pública /p/{slug} con botón copiar.",
+        "El dueño comparte el link con quien quiera (WhatsApp, mail, QR).",
+        "Si despublica, el link público deja de resolver (la ruta /p/{slug} devuelve 'no disponible')."
+      ],
+      "acceptance_criteria": [
+        {
+          "id": "AC-03.1",
+          "given": "Pasaporte en modo owner con parcela privada",
+          "when": "El dueño activa 'Publicar'",
+          "then": "Se llama al endpoint de publicación, el estado pasa a 'Pública' y aparece la URL /p/{slug} lista para copiar."
+        },
+        {
+          "id": "AC-03.2",
+          "given": "Parcela publicada",
+          "when": "El dueño activa 'Dejar de compartir'",
+          "then": "El estado vuelve a 'Privada' y /p/{slug} deja de servir el pasaporte."
+        }
+      ]
+    },
+    {
+      "id": "UJ-04",
+      "title": "Visitante abre el link público compartido",
+      "actor": "Tercero invitado (inversor, auditor, familiar)",
+      "steps": [
+        "Recibe el link /p/{slug} (o escanea el QR del PDF blockchain) y lo abre sin login.",
+        "Ve el pasaporte completo en modo lectura: diorama, timelapse, futurología, what-if y sección de certificado con la evidencia on-chain.",
+        "No ve controles de gestión (publicar/despublicar) ni acceso a otras parcelas privadas.",
+        "Desde la sección Certificado puede descargar el PDF blockchain para archivar o verificar."
+      ],
+      "acceptance_criteria": [
+        {
+          "id": "AC-04.1",
+          "given": "Un slug público válido",
+          "when": "Se carga /p/{slug} sin sesión",
+          "then": "Renderiza el pasaporte read-only con las 6 secciones y sin controles de owner."
+        },
+        {
+          "id": "AC-04.2",
+          "given": "Slug inválido o parcela despublicada",
+          "when": "Se carga /p/{slug}",
+          "then": "Muestra estado 'Pasaporte no disponible' (404 suave), sin filtrar datos de la parcela."
+        },
+        {
+          "id": "AC-04.3",
+          "given": "El link público se pega en WhatsApp/LinkedIn o se incrusta en el PDF",
+          "when": "La plataforma resuelve el preview",
+          "then": "La metadata OpenGraph muestra nombre de la parcela, superficie y una imagen representativa."
+        }
+      ]
+    },
+    {
+      "id": "UJ-05",
+      "title": "Pasaporte como acompañamiento del PDF blockchain",
+      "actor": "Auditor / parte interesada con el PDF en mano",
+      "steps": [
+        "El PDF blockchain (generado en backend) imprime la URL pública del pasaporte y un QR.",
+        "El auditor abre el link y contrasta: content_hash del pasaporte == hash impreso en el PDF; las series NDVI/clima y la proyección son las vivas que el PDF resume.",
+        "En la sección Certificado del pasaporte encuentra los audit_urls (Solana explorer) y el botón de descarga del propio PDF."
+      ],
+      "acceptance_criteria": [
+        {
+          "id": "AC-05.1",
+          "given": "Pasaporte público con certificado disponible",
+          "when": "El usuario abre la sección Certificado",
+          "then": "Ve hash de contenido, estado on-chain, enlaces al explorer y un CTA 'Descargar certificado PDF' apuntando al endpoint del backend."
+        },
+        {
+          "id": "AC-05.2",
+          "given": "El endpoint de PDF aún no está disponible en un entorno",
+          "when": "Se renderiza la sección Certificado",
+          "then": "El CTA muestra estado 'PDF en generación'/deshabilitado sin romper la página."
+        }
+      ]
+    }
+  ],
+
+  "business_rules": [
+    "BR-01: El listado del explorador no puede mostrar más que nombre, localidad, hectáreas y dot NDVI por parcela; todo dato analítico vive solo dentro del pasaporte.",
+    "BR-02: Toda parcela del catálogo debe ser direccionable: /parcela/{id} resuelve con el id de backend o del mock.",
+    "BR-03: La vista completa solo existe en el pasaporte; el panel del explorador queda reducido a identidad + CTA (no se duplican features).",
+    "BR-04: La ruta pública /p/{slug} nunca expone controles de gestión ni datos privados; es estrictamente de solo lectura.",
+    "BR-05: Publicar/despublicar muta solo vía backend (is_published/public_slug); el frontend nunca fabrica slugs locales.",
+    "BR-06: Si el backend no responde, el pasaporte funciona en modo demo sobre los mocks existentes, con indicación de fuente de datos visible.",
+    "BR-07: El pasaporte público y el PDF blockchain deben exhibir el mismo content_hash/identificadores de auditoría (fuente de verdad: backend).",
+    "BR-08: Diseño bajo las reglas anti-slop del repo (VISTAS.md): una superficie por capa, un acento por pantalla (musgo), números tabulares, sin cards dentro de cards.",
+    "BR-09: WebGPU/vgpu es acelerador con fallback garantizado (MapLibre pitch+terrain o estática) — el pasaporte nunca queda en blanco por falta de navigator.gpu.",
+    "BR-10: Las rutas deben implementarse con las convenciones de Next.js 16 del repo: App Router, params como Promise, tipos generados PageProps/LayoutProps y generateMetadata para OG."
+  ],
+
+  "backend_dependencies": [
+    { "endpoint": "GET /v1/fields/{id}", "status": "assumed-existing", "purpose": "Payload de parcela individual para el pasaporte owner." },
+    { "endpoint": "GET /v1/fields/{id}/timelapses + manifest", "status": "existing", "purpose": "Sección timelapse." },
+    { "endpoint": "POST /v1/fields/{id}/simulations/what-if", "status": "existing", "purpose": "Sección what-if." },
+    { "endpoint": "POST /v1/valuations/5yr", "status": "existing (standalone)", "purpose": "Sección futurología; migrar a /v1/fields/{id}/valuations/5yr cuando exista." },
+    { "endpoint": "GET /v1/public/fields/{slug}", "status": "new — backend contract", "purpose": "Payload sanitizado del pasaporte público." },
+    { "endpoint": "POST /v1/fields/{id}/publish · POST /v1/fields/{id}/unpublish", "status": "new — backend contract", "purpose": "Publicar/revocar link público (alternativa: PATCH is_published)." },
+    { "endpoint": "GET /v1/fields/{id}/certificate.pdf", "status": "in-progress (backend)", "purpose": "Descarga del PDF blockchain desde la sección Certificado." }
+  ],
+
+  "open_questions": [
+    "¿El clic en una fila del catálogo navega directo a /parcela/{id} o mantiene el preview inline con CTA? (spec asume preview + CTA; alternativa documentada).",
+    "¿'Dueño' se determina por auth futura o por flag is_owner del payload? (spec asume flag del payload; auth queda fuera de alcance).",
+    "¿La vista pública incluye futurología/what-if completos o una versión resumida? (spec asume completa — es el valor agregado del pasaporte).",
+    "¿Se necesita modo 'unlisted' (link con token pero sin indexar) además de público? (propuesto para fase 2)."
+  ]
+}

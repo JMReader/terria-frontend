@@ -1,0 +1,215 @@
+{
+  "$schema": "technical-spec/v1",
+  "feature_id": "parcel-digital-passport",
+  "title": "Technical Spec: Rutas direccionables de parcela (/parcela/[id] owner, /p/[slug] público), Pasaporte Digital con 6 secciones reutilizando engines existentes, y capa de compartición public_slug",
+  "version": "1.0.0",
+  "status": "DRAFT — awaiting user approval (Gate 2)",
+  "based_on": "functional-spec v1.0.0",
+
+  "architecture_decisions": {
+    "routing": {
+      "strategy": "App Router de Next.js 16 — dos rutas que componen el mismo componente de pasaporte en dos modos",
+      "routes": [
+        {
+          "path": "/parcela/[id]",
+          "file": "src/app/parcela/[id]/page.tsx",
+          "mode": "owner",
+          "notes": "params llega como Promise<{ id: string }> (convención Next 15+/16); se tipea con el helper generado PageProps<'/parcela/[id]'>. Resolución de parcela por id de backend o mock; not-found.tsx dedicado para ids inexistentes."
+        },
+        {
+          "path": "/p/[slug]",
+          "file": "src/app/p/[slug]/page.tsx",
+          "mode": "public",
+          "notes": "Read-only. generateMetadata({ params }) produce OG title/description/image por parcela para el preview del link y el QR del PDF blockchain."
+        }
+      ],
+      "shared_component": "ParcelPassportView (client) recibe { field, mode: 'owner' | 'public' } — una sola implementación de las 6 secciones; el modo solo habilita/oculta ShareControls y CTAs de gestión.",
+      "explorador_wiring": "En page.tsx el FieldDetailView se reduce a identidad + CTA; el CTA hace router.push(`/parcela/${field.id}`). El flujo pin→flyTo→FieldTerrainGPU inline se conserva como preview."
+    },
+    "data_layer": {
+      "new_hook": {
+        "name": "useParcelPassport",
+        "file": "src/hooks/useParcelPassport.ts",
+        "signature": "useParcelPassport({ id?: string; slug?: string; mode: 'owner'|'public' }) => { field, shareState, source: 'live'|'demo'|'loading'|'not-found', actions }",
+        "resolution_order": [
+          "mode owner: GET /v1/fields/{id} → adaptación a FieldItem (+ shareState desde is_published/public_slug).",
+          "mode public: GET /v1/public/fields/{slug} → FieldItem sanitizado (el backend decide qué campos viajan).",
+          "fallback: lookup en FIELDS_DATA por id o por slug derivado del nombre — mantiene viva la demo sin backend.",
+          "race guard por requestId + AbortSignal.timeout(3000) igual que page.tsx actual."
+        ]
+      },
+      "terriaApi_extensions": [
+        "getField(id: string): Promise<FieldItem-like> — GET /v1/fields/{id} (verificar existencia; si falta, derivar del listado).",
+        "getPublicField(slug: string): Promise<PublicParcelPayload> — GET /v1/public/fields/{slug} (nuevo contrato backend).",
+        "publishField(id: string) / unpublishField(id: string) — POST nuevos (o PATCH is_published según decida backend).",
+        "fieldCertificatePdfUrl(id: string): string — `${API_BASE}/v1/fields/${id}/certificate.pdf` (endpoint en construcción; el CTA lo intenta con HEAD/descarga y muestra 'en generación' si 404/202)."
+      ],
+      "reused_engines": [
+        "useFieldTimelapse({ manifest }) — ya sincronizado; la página carga el manifest por field.id con el mismo flujo de page.tsx (timelapses → ready/partial → normalizeTimelapseManifest).",
+        "useFieldValuation(field) — futurología, con fallback computeDemoValuation.",
+        "useFieldWhatIf(field) — what-if contrafáctico, con fallback computeDemoWhatIf.",
+        "FieldTerrainGPU — diorama real DEM+vgpu con prop onFallback (mismo patrón que el explorador)."
+      ]
+    },
+    "sharing_model": {
+      "owner_controls": "SharePanel en cabecera del pasaporte (solo mode=owner): switch Publicar/Despublicar + URL /p/{slug} copiable + estado. Llama a los endpoints nuevos; ante backend sin soporte muestra 'Compartición pública pendiente de backend' deshabilitado, sin romper la página.",
+      "public_payload": "El backend sanitiza: viaja FieldItem + flags de secciones habilitadas; nunca expone endpoints de mutación. El frontend además oculta SharePanel por mode='public'.",
+      "pdf_companion": "Sección Certificado: SolanaAuditCard (existente, DEMO_SOLANA_CERTIFICATION → luego audit reales) + botón 'Descargar certificado PDF' → fieldCertificatePdfUrl. El content_hash mostrado debe ser el mismo que imprime el PDF."
+    },
+    "design_system": {
+      "rules": "Anti-slop de specs/features/explorador-terreno-3d/VISTAS.md: una superficie por capa, overlays delgados translúcidos, un acento (musgo), tabular-nums, sin cards anidadas.",
+      "tokens": "Paleta Terria existente (bosque, musgo, oliva, piedra, nube, papel, cielo, tierra) — globals.css @theme, no se agregan colores.",
+      "layout": "Página con scroll vertical: cabecera identidad sticky-fina → hero diorama (h-[70vh] en card papel) → secciones apiladas con SectionHeading; nav de anclas opcional en la cabecera."
+    },
+    "next16_conventions": {
+      "params_async": "const { id } = await params — params es Promise en page.tsx.",
+      "generated_types": "PageProps<'/parcela/[id]'> / LayoutProps<'/'> según patrón ya usado en layout.tsx (LayoutProps<'/'>).",
+      "metadata": "generateMetadata async en /p/[slug] para OG por parcela.",
+      "client_boundary": "page.tsx de cada ruta = server component fino (params + metadata + fetch inicial opcional); ParcelPassportView y todo lo interactivo = 'use client'. Canvas 3D sigue con dynamic(ssr:false)."
+    }
+  },
+
+  "module_specifications": {
+    "src/app/parcela/[id]/page.tsx": {
+      "purpose": "Ruta owner del pasaporte.",
+      "type": "server component async",
+      "exports": ["default ParcelaPage({ params }: PageProps<'/parcela/[id]'>)"],
+      "behavior": "await params → resuelve field (server fetch con fallback a mock import) → render <ParcelPassportView field mode='owner'/>; id desconocido → notFound()."
+    },
+    "src/app/parcela/[id]/not-found.tsx": {
+      "purpose": "Estado 404 limpio: 'Parcela no encontrada' + link al explorador.",
+      "type": "server component"
+    },
+    "src/app/p/[slug]/page.tsx": {
+      "purpose": "Ruta pública read-only del pasaporte + OG metadata.",
+      "type": "server component async",
+      "exports": ["generateMetadata({ params })", "default PublicParcelPage({ params }: PageProps<'/p/[slug]'>)"],
+      "behavior": "Slug inválido/despublicado → not-found público sin filtrar datos."
+    },
+    "src/components/passport/ParcelPassportView.tsx": {
+      "purpose": "Composición del pasaporte completo.",
+      "props": {
+        "field": "FieldItem",
+        "mode": "'owner' | 'public'",
+        "initialManifest?": "TimelapseManifest (si el server ya lo resolvió)"
+      },
+      "children_structure": [
+        "PassportHeader (identidad, badge verificado, shareState, SharePanel si owner, ‹ Volver)",
+        "PassportDiorama (FieldTerrainGPU dynamic + fallback MapLibre pitch)",
+        "PassportTimelapse (NdviMetricCard + WeatherDailyCard + NdviSparklineChart + TimelapseController con useFieldTimelapse)",
+        "ValuationPanel (futurología — componente existente)",
+        "WhatIfPanel (componente existente)",
+        "PassportCertificate (SolanaAuditCard + CertificatePdfCard)"
+      ]
+    },
+    "src/components/passport/PassportHeader.tsx": {
+      "purpose": "Identidad + verificación + estado de publicación.",
+      "props": { "field": "FieldItem", "mode": "PassportMode", "shareState": "ShareState", "onPublish": "() => void", "onUnpublish": "() => void" }
+    },
+    "src/components/passport/SharePanel.tsx": {
+      "purpose": "Controles del dueño: publicar/despublicar, copiar link, estado.",
+      "props": { "shareState": "ShareState", "publicUrl": "string | null", "onPublish": "() => Promise<void>", "onUnpublish": "() => Promise<void>" }
+    },
+    "src/components/passport/PassportDiorama.tsx": {
+      "purpose": "Wrapper del diorama: dynamic import FieldTerrainGPU + tira de info fina (nombre/ha/NDVI) + fallback.",
+      "props": { "field": "FieldItem" }
+    },
+    "src/components/passport/PassportTimelapse.tsx": {
+      "purpose": "Sección timelapse completa reusando componentes de src/components/timelapse/.",
+      "props": { "field": "FieldItem", "timelapse": "ReturnType<typeof useFieldTimelapse>" }
+    },
+    "src/components/passport/CertificatePdfCard.tsx": {
+      "purpose": "Card de certificado blockchain: content_hash, estado on-chain, audit_urls y CTA de descarga PDF con estado 'en generación'.",
+      "props": { "field": "FieldItem", "pdfUrl": "string", "contentHash?": "string", "auditUrls?": "Record<string,string>" }
+    },
+    "src/hooks/useParcelPassport.ts": {
+      "purpose": "Resolución de parcela por id/slug con fallback mock + acciones publish/unpublish.",
+      "exports": ["useParcelPassport", "interface ShareState { isPublished: boolean; publicSlug: string | null; status: 'private'|'public'|'pending' }"]
+    },
+    "src/types/passport.ts": {
+      "purpose": "Tipos nuevos: PassportMode, ShareState, PublicParcelPayload.",
+      "exports": ["PassportMode", "ShareState", "PublicParcelPayload extends FieldItem"]
+    },
+    "src/lib/terriaApi.ts (extensión)": {
+      "purpose": "getField, getPublicField, publishField, unpublishField, fieldCertificatePdfUrl + adaptadores snake→camel siguiendo adaptManifest/adaptValuation existentes."
+    },
+    "src/components/FieldCardsList.tsx + FieldCard.tsx (simplificación)": {
+      "purpose": "Reducir la fila a dot NDVI + nombre + localidad + ha (eliminar línea de cultivo, NDVI numérico, chevron doble dato).",
+      "notes": "Sin cambios de firma de props."
+    },
+    "src/components/FieldDetailView.tsx (reducción)": {
+      "purpose": "Panel del explorador = identidad mínima + CTA 'Abrir pasaporte digital' (router.push). Los tabs Resumen/Timelapse salen del panel — viven solo en el pasaporte.",
+      "props_nuevas": { "onOpenPassport": "() => void" }
+    },
+    "src/app/page.tsx (wiring)": {
+      "purpose": "Pasar onOpenPassport=() => router.push(`/parcela/${selectedField.id}`); mantener preview pin→3D."
+    }
+  },
+
+  "implementation_phases": [
+    {
+      "phase": 1,
+      "name": "Capa de datos y rutas",
+      "tasks": [
+        "Crear src/types/passport.ts (PassportMode, ShareState, PublicParcelPayload).",
+        "Extender terriaApi.ts: getField, getPublicField, publishField, unpublishField, fieldCertificatePdfUrl + adaptadores.",
+        "Crear useParcelPassport.ts con resolución owner/public, fallback mock y race guard.",
+        "Crear rutas src/app/parcela/[id]/page.tsx + not-found.tsx y src/app/p/[slug]/page.tsx (params Promise, PageProps, generateMetadata)."
+      ]
+    },
+    {
+      "phase": 2,
+      "name": "Pasaporte — esqueleto e identidad + diorama",
+      "tasks": [
+        "Crear ParcelPassportView.tsx con layout de secciones y PassportHeader.",
+        "Crear PassportDiorama.tsx integrando FieldTerrainGPU (dynamic ssr:false) con tira de info y fallback.",
+        "Wirear carga del manifest de timelapse por field.id (replicar flujo de page.tsx en hook o server)."
+      ]
+    },
+    {
+      "phase": 3,
+      "name": "Secciones de features completas",
+      "tasks": [
+        "Crear PassportTimelapse.tsx reusando timelapse/* con useFieldTimelapse compartido.",
+        "Integrar ValuationPanel (futurología) y WhatIfPanel en sus secciones con títulos SectionHeading.",
+        "Crear CertificatePdfCard + sección Certificado con SolanaAuditCard y CTA PDF."
+      ]
+    },
+    {
+      "phase": 4,
+      "name": "Compartición owner + vista pública",
+      "tasks": [
+        "Crear SharePanel.tsx con publish/unpublish/copy link + estados pending/error.",
+        "Completar /p/[slug]: payload sanitizado, mode='public' (oculta gestión), OG metadata, 404 suave.",
+        "Verificar consistencia content_hash entre pasaporte y PDF cuando el endpoint exista."
+      ]
+    },
+    {
+      "phase": 5,
+      "name": "Simplificación del catálogo + wiring + verificación",
+      "tasks": [
+        "Reducir FieldCard/FieldCardsList al índice mínimo (dot + nombre + localidad + ha).",
+        "Reducir FieldDetailView a identidad + CTA 'Abrir pasaporte' y wirear router.push en page.tsx.",
+        "Smoke test con Playwright (deps ya instaladas): explorador → CTA → /parcela/{id} → 6 secciones → modo público.",
+        "npx tsc --noEmit + npm run build limpios."
+      ]
+    }
+  ],
+
+  "verification_plan": {
+    "automated": [
+      "npx tsc --noEmit (0 errores de TypeScript)",
+      "npm run build (Turbopack) — ambas rutas compilan, dynamic imports OK",
+      "Playwright smoke: navegación catálogo → pasaporte; render de secciones; 404 en id inválido"
+    ],
+    "manual": [
+      "Listado muestra solo dot+nombre+localidad+ha por fila.",
+      "/parcela/{id} renderiza diorama orbitable, timelapse con reproducción, futurología, what-if y certificado.",
+      "Publicar genera link /p/{slug} copiable; despublicar lo invalida.",
+      "/p/{slug} abre sin login, read-only, con OG preview correcto al pegar el link.",
+      "Con backend caído todo funciona en modo demo con etiqueta de fuente visible.",
+      "En navegador sin WebGPU el diorama cae al fallback sin dejar la página en blanco.",
+      "La sección Certificado muestra hash/audit_urls y el CTA de PDF en estado correcto (descarga o 'en generación')."
+    ]
+  }
+}

@@ -1,0 +1,198 @@
+{
+  "$schema": "todos/v1",
+  "feature_id": "parcel-digital-passport",
+  "version": "1.0.0",
+  "status": "pending_execution",
+  "batches": [
+    {
+      "batch": 1,
+      "description": "Tipos, capa de datos y rutas direccionables",
+      "tasks": [
+        {
+          "id": "T01",
+          "title": "Crear src/types/passport.ts con PassportMode ('owner'|'public'), ShareState y PublicParcelPayload",
+          "owner_role": "frontend-ui",
+          "status": "pending",
+          "parallelizable": true,
+          "depends_on": [],
+          "outputs": ["src/types/passport.ts"],
+          "exit_criteria": "Tipos exportados y usables por hooks/componentes; ShareState cubre private/public/pending + publicSlug."
+        },
+        {
+          "id": "T02",
+          "title": "Extender src/lib/terriaApi.ts: getField, getPublicField, publishField, unpublishField, fieldCertificatePdfUrl con adaptadores snake→camel",
+          "owner_role": "frontend-data",
+          "status": "pending",
+          "parallelizable": true,
+          "depends_on": ["T01"],
+          "outputs": ["terriaApi.ts extendido"],
+          "exit_criteria": "Funciones exportadas siguiendo el patrón fetchJson/adapt* existente; endpoints nuevos documentados con TODO de contrato backend."
+        },
+        {
+          "id": "T03",
+          "title": "Crear src/hooks/useParcelPassport.ts — resolución por id (owner) o slug (public), fallback FIELDS_DATA, race guard y acciones publish/unpublish",
+          "owner_role": "frontend-data",
+          "status": "pending",
+          "parallelizable": false,
+          "depends_on": ["T01", "T02"],
+          "outputs": ["src/hooks/useParcelPassport.ts"],
+          "exit_criteria": "Retorna { field, shareState, source, publish, unpublish }; funciona con backend offline (demo) y descarta respuestas viejas."
+        },
+        {
+          "id": "T04",
+          "title": "Crear rutas src/app/parcela/[id]/page.tsx + not-found.tsx y src/app/p/[slug]/page.tsx con params Promise, PageProps y generateMetadata",
+          "owner_role": "frontend-ui",
+          "status": "pending",
+          "parallelizable": false,
+          "depends_on": ["T03"],
+          "outputs": ["src/app/parcela/[id]/page.tsx", "src/app/parcela/[id]/not-found.tsx", "src/app/p/[slug]/page.tsx", "src/app/p/[slug]/not-found.tsx"],
+          "exit_criteria": "Ambas rutas compilan (server components async finos), resuelven parcela y delegan a ParcelPassportView; 404 limpio en id/slug inválido."
+        }
+      ]
+    },
+    {
+      "batch": 2,
+      "description": "Esqueleto del pasaporte: header de identidad + diorama hero",
+      "tasks": [
+        {
+          "id": "T05",
+          "title": "Crear src/components/passport/ParcelPassportView.tsx con layout de 6 secciones y PassportHeader.tsx",
+          "owner_role": "frontend-ui",
+          "status": "pending",
+          "parallelizable": false,
+          "depends_on": ["T01", "T04"],
+          "outputs": ["src/components/passport/ParcelPassportView.tsx", "src/components/passport/PassportHeader.tsx"],
+          "exit_criteria": "Página con scroll: identidad + badge verificado + estado de publicación + ‹ Volver; secciones ancla ordenadas según spec; reglas anti-slop aplicadas."
+        },
+        {
+          "id": "T06",
+          "title": "Crear src/components/passport/PassportDiorama.tsx — FieldTerrainGPU vía dynamic(ssr:false), tira de info fina y fallback MapLibre pitch+terrain",
+          "owner_role": "frontend-3d",
+          "status": "pending",
+          "parallelizable": true,
+          "depends_on": ["T05"],
+          "outputs": ["src/components/passport/PassportDiorama.tsx"],
+          "exit_criteria": "Hero ~70vh orbitable con DEM real; sin WebGPU cae al fallback; tira con nombre/ha/NDVI en tabular-nums."
+        },
+        {
+          "id": "T07",
+          "title": "Wirear manifest de timelapse por field.id en el pasaporte (flujo timelapses→ready/partial→normalizeTimelapseManifest con fallback demo)",
+          "owner_role": "frontend-data",
+          "status": "pending",
+          "parallelizable": false,
+          "depends_on": ["T05"],
+          "outputs": ["useParcelPassport extendido o fetch en page.tsx"],
+          "exit_criteria": "useFieldTimelapse recibe manifest real por parcela; demo manifest como fallback."
+        }
+      ]
+    },
+    {
+      "batch": 3,
+      "description": "Secciones de features: timelapse, futurología, what-if, certificado",
+      "tasks": [
+        {
+          "id": "T08",
+          "title": "Crear src/components/passport/PassportTimelapse.tsx reusando NdviMetricCard, WeatherDailyCard, NdviSparklineChart y TimelapseController",
+          "owner_role": "frontend-ui",
+          "status": "pending",
+          "parallelizable": true,
+          "depends_on": ["T07"],
+          "outputs": ["src/components/passport/PassportTimelapse.tsx"],
+          "exit_criteria": "Reproducción, cambio de capa y salto a observación funcionan igual que en el panel actual."
+        },
+        {
+          "id": "T09",
+          "title": "Integrar secciones Futurología (ValuationPanel existente) y What-If (WhatIfPanel existente) con SectionHeading y fuente de datos visible",
+          "owner_role": "frontend-ui",
+          "status": "pending",
+          "parallelizable": true,
+          "depends_on": ["T05"],
+          "outputs": ["ParcelPassportView.tsx actualizado"],
+          "exit_criteria": "Proyección a N años y ranking multicultivo renderizan dentro del pasaporte con hooks useFieldValuation/useFieldWhatIf."
+        },
+        {
+          "id": "T10",
+          "title": "Crear src/components/passport/CertificatePdfCard.tsx y sección Certificado con SolanaAuditCard + CTA 'Descargar certificado PDF' (estado 'en generación' si el endpoint no responde)",
+          "owner_role": "frontend-ui",
+          "status": "pending",
+          "parallelizable": true,
+          "depends_on": ["T05", "T02"],
+          "outputs": ["src/components/passport/CertificatePdfCard.tsx"],
+          "exit_criteria": "Hash, estado on-chain, audit_urls y botón PDF con manejo de 404/202; consistente con el PDF del backend."
+        }
+      ]
+    },
+    {
+      "batch": 4,
+      "description": "Compartición controlada por el dueño y vista pública",
+      "tasks": [
+        {
+          "id": "T11",
+          "title": "Crear src/components/passport/SharePanel.tsx — switch publicar/despublicar, URL copiable, estados pending/error; deshabilitado elegante sin soporte backend",
+          "owner_role": "frontend-ui",
+          "status": "pending",
+          "parallelizable": false,
+          "depends_on": ["T03", "T05"],
+          "outputs": ["src/components/passport/SharePanel.tsx"],
+          "exit_criteria": "Owner publica → is_published + link /p/{slug} copiable; despublica → link invalidado; solo visible en mode='owner'."
+        },
+        {
+          "id": "T12",
+          "title": "Completar /p/[slug]: payload sanitizado, mode='public' sin controles de gestión, OG metadata por parcela y 404 suave en slug inválido/despublicado",
+          "owner_role": "frontend-ui",
+          "status": "pending",
+          "parallelizable": false,
+          "depends_on": ["T04", "T08", "T09", "T10"],
+          "outputs": ["src/app/p/[slug]/page.tsx completo"],
+          "exit_criteria": "Pasaporte público read-only con las 6 secciones; og:title/description/image correctos; sin fuga de datos privados."
+        }
+      ]
+    },
+    {
+      "batch": 5,
+      "description": "Simplificación del catálogo, wiring de navegación y verificación",
+      "tasks": [
+        {
+          "id": "T13",
+          "title": "Reducir FieldCard/FieldCardsList al índice mínimo (dot NDVI + nombre + localidad + ha) eliminando cultivo y NDVI numérico",
+          "owner_role": "frontend-ui",
+          "status": "pending",
+          "parallelizable": true,
+          "depends_on": [],
+          "outputs": ["src/components/FieldCard.tsx", "src/components/FieldCardsList.tsx"],
+          "exit_criteria": "Filas escaneables sin datos analíticos; firma de props sin cambios."
+        },
+        {
+          "id": "T14",
+          "title": "Reducir FieldDetailView a identidad mínima + CTA 'Abrir pasaporte digital' y wirear router.push(`/parcela/${id}`) en page.tsx",
+          "owner_role": "frontend-ui",
+          "status": "pending",
+          "parallelizable": false,
+          "depends_on": ["T04", "T13"],
+          "outputs": ["src/components/FieldDetailView.tsx", "src/app/page.tsx"],
+          "exit_criteria": "Panel sin tabs Resumen/Timelapse (migrados al pasaporte); CTA navega a la ruta por id; preview pin→3D intacto."
+        },
+        {
+          "id": "T15",
+          "title": "Smoke test Playwright: explorador → CTA → /parcela/{id} → 6 secciones → /p/{slug} público → 404 inválido",
+          "owner_role": "frontend-full",
+          "status": "pending",
+          "parallelizable": false,
+          "depends_on": ["T12", "T14"],
+          "outputs": ["tests/passport.spec.ts o script playwright"],
+          "exit_criteria": "Flujo completo verificado end-to-end en local."
+        },
+        {
+          "id": "T16",
+          "title": "Validación final: npx tsc --noEmit, npm run build y push a fork (JMReader/terria-frontend)",
+          "owner_role": "devops",
+          "status": "pending",
+          "parallelizable": false,
+          "depends_on": ["T15"],
+          "outputs": ["Build 0 errores, rama feat/parcel-digital-passport pusheada"],
+          "exit_criteria": "Typecheck y build limpios; specs + código en remoto."
+        }
+      ]
+    }
+  ]
+}
