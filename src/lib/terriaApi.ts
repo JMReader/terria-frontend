@@ -20,7 +20,7 @@ import {
   FieldWhatIfRequest,
   StandaloneWhatIfRequest,
 } from "@/types/whatIf";
-import { FieldItem, FIELDS_DATA } from "@/data/fieldsData";
+import type { FieldItem } from "@/data/fieldsData";
 import { OwnerProfile, PublicParcelPayload } from "@/types/passport";
 
 /**
@@ -960,16 +960,4 @@ export function toAuditCertification(
   };
 }
 
-/** Resolución demo: busca en el mock por id o por slug derivado del nombre. */
-export function findMockField(idOrSlug: string): FieldItem | undefined {
-  const byId = FIELDS_DATA.find((f) => f.id === idOrSlug);
-  if (byId) return byId;
-  return FIELDS_DATA.find(
-    (f) =>
-      f.name
-        .toLowerCase()
-        .replace(/[^a-z0-9]+/g, "-")
-        .replace(/(^-|-$)/g, "") === idOrSlug
-  );
-}
 

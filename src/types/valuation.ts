@@ -55,4 +55,4 @@ export interface LandValuation {
   auditUrls: Record<string, string>;
 }
 
-export type ValuationSource = "loading" | "live" | "demo" | "error";
+export type ValuationSource = "loading" | "live" | "error";

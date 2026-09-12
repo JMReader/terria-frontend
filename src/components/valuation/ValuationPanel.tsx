@@ -8,6 +8,7 @@ import ValuationHeroCard from "./ValuationHeroCard";
 import ProjectionCurveChart from "./ProjectionCurveChart";
 import DriverMultiplierCard from "./DriverMultiplierCard";
 import ValuationAuditCard from "./ValuationAuditCard";
+import { Loader2, Unplug } from "lucide-react";
 
 export interface ValuationPanelProps {
   field: FieldItem;
@@ -25,8 +26,8 @@ const fmtCompact = (usd: number) =>
 
 /**
  * Pestaña "Futuro" del FieldDetailView — consume el proyector de valor de
- * tierra (land-valuation-5yr) del backend de Angel vía useFieldValuation,
- * con fallback demo determinístico cuando la API no responde.
+ * tierra (land-valuation-5yr) del backend vía useFieldValuation.
+ * Sin backend: estado de error honesto, sin fallback a datos mock.
  */
 export default function ValuationPanel({
   field,
@@ -38,6 +39,36 @@ export default function ValuationPanel({
   const internal = useFieldValuation(field);
   const ctl = sharedValuation ?? internal;
   const { valuation, source, projectionYears, setProjectionYears } = ctl;
+
+  if (!valuation) {
+    return (
+      <div className={`space-y-4 ${className}`}>
+        <div className="flex items-center justify-between gap-2">
+          <span className="text-[10px] font-mono font-bold tracking-wider text-piedra uppercase">
+            Futurología · Proyector de valor
+          </span>
+        </div>
+        <div className="flex flex-col items-center justify-center gap-2 rounded-3xl border border-piedra-soft bg-papel py-14 text-center">
+          {source === "error" ? (
+            <>
+              <Unplug className="h-7 w-7 text-piedra-soft" />
+              <p className="text-xs font-mono text-bosque/70">
+                Sin conexión con el backend — no se pudo proyectar el valor.
+              </p>
+            </>
+          ) : (
+            <>
+              <Loader2 className="h-7 w-7 animate-spin text-piedra-soft" />
+              <p className="text-xs font-mono text-bosque/70">
+                Calculando proyección de valor…
+              </p>
+            </>
+          )}
+        </div>
+      </div>
+    );
+  }
+
   const d = valuation.driversBreakdown;
 
   const totalImpact = Math.max(

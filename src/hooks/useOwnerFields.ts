@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useRef, useState } from "react";
-import { FieldItem, FIELDS_DATA } from "@/data/fieldsData";
+import { FieldItem } from "@/data/fieldsData";
 import {
   OwnerFieldRow,
   PassportSource,
@@ -29,7 +29,7 @@ function toRow(field: FieldItem): OwnerFieldRow {
 
 /**
  * Parcelas del dueño autenticado (GET /v1/me/fields) + acciones de
- * compartición. Fallback demo: FIELDS_DATA como si fueran propias.
+ * compartición. Si el backend no responde queda en `error` — sin mocks.
  */
 export function useOwnerFields() {
   const { token, status: authStatus } = useOwnerAuth();
@@ -40,9 +40,9 @@ export function useOwnerFields() {
   const refresh = useCallback(async () => {
     const requestId = ++requestRef.current;
     if (!token) {
-      if (authStatus === "anonymous") {
+      if (authStatus === "anonymous" || authStatus === "offline") {
         setFields([]);
-        setSource("demo");
+        setSource(authStatus === "offline" ? "error" : "live");
       }
       return;
     }
@@ -53,8 +53,8 @@ export function useOwnerFields() {
       setSource("live");
     } catch {
       if (requestRef.current !== requestId) return;
-      setFields(FIELDS_DATA.map(toRow));
-      setSource("demo");
+      setFields([]);
+      setSource("error");
     }
   }, [token, authStatus]);
 

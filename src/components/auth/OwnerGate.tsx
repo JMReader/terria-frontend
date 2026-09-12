@@ -7,7 +7,8 @@ import { useOwnerAuth } from "./OwnerAuthProvider";
 
 /**
  * Guarda de rutas del dueño: sin sesión → /ingresar?next=<ruta actual>.
- * En modo demo (backend caído con sesión previa) deja pasar igual.
+ * Offline (backend caído con sesión previa guardada) deja pasar igual —
+ * las vistas muestran su propio estado de error sin datos mock.
  */
 export default function OwnerGate({ children }: { children: React.ReactNode }) {
   const { status } = useOwnerAuth();

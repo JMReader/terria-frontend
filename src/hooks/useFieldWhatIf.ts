@@ -10,7 +10,6 @@ import {
   YearDataAvailability,
 } from "@/types/whatIf";
 import { fetchFieldWhatIf, fetchStandaloneWhatIf } from "@/lib/terriaApi";
-import { computeDemoWhatIf } from "@/data/whatIfMockData";
 
 export interface UseFieldWhatIfOptions {
   initialYear?: number;
@@ -50,14 +49,10 @@ export function useFieldWhatIf(
     [targetYear]
   );
 
-  const [simulation, setSimulation] = useState<WhatIfSimulation>(() =>
-    computeDemoWhatIf(field, targetYear, realCrop, realMarginUsdHa)
-  );
+  const [simulation, setSimulation] = useState<WhatIfSimulation | null>(null);
   const [source, setSource] = useState<WhatIfSource>("loading");
 
-  const cacheRef = useRef<
-    Map<string, { simulation: WhatIfSimulation; source: "live" | "demo" }>
-  >(new Map());
+  const cacheRef = useRef<Map<string, WhatIfSimulation>>(new Map());
 
   const resetToFieldDefaults = useCallback(() => {
     setRealCrop(defaultCrop);
@@ -73,11 +68,12 @@ export function useFieldWhatIf(
 
     const cached = cacheRef.current.get(cacheKey);
     if (cached) {
-      setSimulation(cached.simulation);
-      setSource(cached.source);
+      setSimulation(cached);
+      setSource("live");
       return;
     }
 
+    setSimulation(null);
     setSource("loading");
 
     async function load() {
@@ -109,20 +105,13 @@ export function useFieldWhatIf(
         }
 
         if (!active) return;
-        cacheRef.current.set(cacheKey, { simulation: res, source: "live" });
+        cacheRef.current.set(cacheKey, res);
         setSimulation(res);
         setSource("live");
       } catch {
         if (!active) return;
-        const fallback = computeDemoWhatIf(
-          field,
-          safeYear,
-          realCrop,
-          safeMargin
-        );
-        cacheRef.current.set(cacheKey, { simulation: fallback, source: "demo" });
-        setSimulation(fallback);
-        setSource("demo");
+        setSimulation(null);
+        setSource("error");
       }
     }
 

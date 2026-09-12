@@ -3,7 +3,7 @@
 import React from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { MapPin } from "lucide-react";
+import { MapPin, Unplug } from "lucide-react";
 import { useOwnerAuth } from "@/components/auth/OwnerAuthProvider";
 import { useOwnerFields } from "@/hooks/useOwnerFields";
 import OwnerParcelList from "@/components/owner/OwnerParcelList";
@@ -39,8 +39,8 @@ export default function MisParcelasView() {
             </h1>
             <p className="mt-1 text-xs font-mono text-piedra">
               {owner?.name || owner?.email}
-              {authStatus === "demo" ? " · modo demo" : ""} · {fields.length} cargadas
-              {source === "demo" ? " (datos demo)" : ""}
+              {authStatus === "offline" ? " · sin conexión" : ""} · {fields.length} cargadas
+              {source === "error" ? " (error de conexión)" : ""}
             </p>
           </div>
           <Link
@@ -60,6 +60,13 @@ export default function MisParcelasView() {
                 className="h-16 animate-pulse rounded-2xl border border-piedra-soft bg-papel"
               />
             ))}
+          </div>
+        ) : source === "error" ? (
+          <div className="flex flex-col items-center justify-center gap-2 rounded-2xl border border-piedra-soft bg-papel py-14 text-center">
+            <Unplug className="h-7 w-7 text-piedra-soft" />
+            <p className="text-xs font-mono text-bosque/70">
+              Sin conexión con el servidor TERRIA — no se pudieron cargar tus parcelas.
+            </p>
           </div>
         ) : (
           <OwnerParcelList

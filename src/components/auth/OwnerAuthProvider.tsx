@@ -19,7 +19,7 @@ import {
 const TOKEN_KEY = "terria.owner.token";
 const OWNER_KEY = "terria.owner.profile";
 
-export type OwnerAuthStatus = "loading" | "authenticated" | "anonymous" | "demo";
+export type OwnerAuthStatus = "loading" | "authenticated" | "anonymous" | "offline";
 
 interface OwnerAuthContextValue {
   owner: OwnerProfile | null;
@@ -68,9 +68,9 @@ export function OwnerAuthProvider({ children }: { children: React.ReactNode }) {
       })
       .catch(() => {
         if (requestRef.current !== requestId) return;
-        // Backend caído con sesión previa: modo demo con el perfil guardado.
+        // Backend caído con sesión previa: estado offline con el perfil guardado.
         setToken(savedToken);
-        setStatus(savedOwner ? "demo" : "anonymous");
+        setStatus(savedOwner ? "offline" : "anonymous");
         if (!savedOwner) localStorage.removeItem(TOKEN_KEY);
       });
   }, []);

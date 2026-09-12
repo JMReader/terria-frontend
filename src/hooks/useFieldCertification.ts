@@ -4,35 +4,27 @@ import { useEffect, useRef, useState } from "react";
 import { SolanaCertification } from "@/types/terria";
 import { CertificationVersion, CertificationVerify } from "@/types/certification";
 import {
-  certificationHeroUrl,
-  certificationPageUrl,
-  certificationPdfUrl,
   listFieldCertifications,
   monthlyCertUid,
   toAuditCertification,
   verifyCertification,
 } from "@/lib/terriaApi";
-import { DEMO_SOLANA_CERTIFICATION } from "@/data/timelapseMockData";
 
 export type FieldCertificationState =
   | "loading"
   | "ready"
   | "empty"
-  | "error"
-  | "demo";
+  | "error";
 
 export interface FieldCertification {
   state: FieldCertificationState;
-  /** View-model listo para `SolanaAuditCard` (real o demo etiquetado). */
+  /** View-model listo para `SolanaAuditCard` (solo datos reales del backend). */
   audit: SolanaCertification | null;
   /** Versión vigente: la más reciente anclada (o la última si ninguna ancló). */
   latest: CertificationVersion | null;
   /** Cadena mensual (scope=month) ordenada por mes descendente. */
   monthlyChain: CertificationVersion[];
   verify: CertificationVerify | null;
-  pdfUrl: string | null;
-  certPageUrl: string | null;
-  heroUrl: string | null;
 }
 
 const UUID_RE =
@@ -44,15 +36,6 @@ const INITIAL: FieldCertification = {
   latest: null,
   monthlyChain: [],
   verify: null,
-  pdfUrl: null,
-  certPageUrl: null,
-  heroUrl: null,
-};
-
-const DEMO: FieldCertification = {
-  ...INITIAL,
-  state: "demo",
-  audit: DEMO_SOLANA_CERTIFICATION,
 };
 
 /** Meses `YYYY-MM` desde el actual hacia atrás (ventana de sondeo). */
@@ -92,9 +75,6 @@ function readyState(
     latest,
     monthlyChain: monthlyChainOf(versions),
     verify,
-    pdfUrl: certificationPdfUrl(latest.certUid),
-    certPageUrl: certificationPageUrl(latest.certUid),
-    heroUrl: certificationHeroUrl(latest.certUid),
   };
 }
 
@@ -141,37 +121,42 @@ function versionFromVerify(
 /**
  * Sondeo rápido del último certificado mensual: los `cert_uid` mensuales son
  * determinísticos (`uuid5(URL, "terria:monthly:{field_id}:{YYYY-MM}")`), así que
- * se prueba `/verify` mes a mes hacia atrás hasta el primer hit. Evita depender
- * del listado completo, que es lento (N+1 contra Storage).
+ * se prueba `/verify` para cada mes de la ventana — en paralelo — y se queda con
+ * el hit más reciente. Evita depender del listado completo, que es lento
+ * (N+1 contra Storage), y un waterfall secuencial de ~26 requests.
  */
 async function probeLatestMonthly(
   fieldId: string
 ): Promise<{ version: CertificationVersion; verify: CertificationVerify } | null> {
-  for (const month of recentMonths()) {
-    const uid = await monthlyCertUid(fieldId, month);
-    if (!uid) return null; // sin WebCrypto → el caller usa el listado
-    try {
-      const verify = await verifyCertification(uid);
-      return { version: versionFromVerify(fieldId, month, verify), verify };
-    } catch {
-      continue; // mes sin certificación → probar el anterior
-    }
-  }
-  return null;
+  const months = recentMonths();
+  const uids = await Promise.all(months.map((m) => monthlyCertUid(fieldId, m)));
+  if (uids.some((u) => !u)) return null; // sin WebCrypto → el caller usa el listado
+
+  // Los meses vienen ordenados descendente: el primer hit es el más reciente.
+  const hits = await Promise.all(
+    months.map((month, i) =>
+      verifyCertification(uids[i] as string)
+        .then((verify) => ({ month, verify }))
+        .catch(() => null)
+    )
+  );
+  const hit = hits.find((h) => h !== null);
+  if (!hit) return null;
+  return { version: versionFromVerify(fieldId, hit.month, hit.verify), verify: hit.verify };
 }
 
 /**
  * Certificación blockchain real del campo, en dos etapas:
  *  1) sondeo determinístico del último cert mensual → auditoría en segundos;
  *  2) listado completo `/v1/fields/{id}/certifications` → cadena autoritativa.
- * - `demo` o id no-UUID (campos del mock) → datos demo etiquetados, sin fetch.
+ * - id ausente o no-UUID → `empty` (sin fetch, sin datos inventados).
  * - `enabled === false` → queda en loading sin fetchear (p.ej. sheet cerrado).
  */
 export function useFieldCertification(
   fieldId: string | undefined,
-  opts?: { demo?: boolean; enabled?: boolean }
+  opts?: { enabled?: boolean }
 ): FieldCertification {
-  const { demo = false, enabled = true } = opts ?? {};
+  const { enabled = true } = opts ?? {};
   const [cert, setCert] = useState<FieldCertification>(INITIAL);
   const requestRef = useRef(0);
   const isMockId = !fieldId || !UUID_RE.test(fieldId);
@@ -180,55 +165,61 @@ export function useFieldCertification(
     const requestId = ++requestRef.current;
     queueMicrotask(() => {
       if (requestRef.current === requestId) {
-        setCert(demo || isMockId ? DEMO : INITIAL);
+        setCert(isMockId ? { ...INITIAL, state: "empty" } : INITIAL);
       }
     });
-    if (demo || isMockId || !enabled || !fieldId) return;
+    if (isMockId || !enabled || !fieldId) return;
 
     let cancelled = false;
     const alive = () => !cancelled && requestRef.current === requestId;
 
     (async () => {
       // Etapa 1 — fast-path: último cert mensual por uid determinístico.
-      try {
-        const hit = await probeLatestMonthly(fieldId);
-        if (hit && alive()) {
-          setCert(readyState(hit.version, [hit.version], hit.verify));
-        }
-      } catch {
-        /* sondeo indisponible — la etapa 2 cubre */
-      }
+      const probe = probeLatestMonthly(fieldId)
+        .then((hit) => {
+          if (hit && alive()) {
+            setCert(readyState(hit.version, [hit.version], hit.verify));
+          }
+        })
+        .catch(() => {
+          /* sondeo indisponible — la etapa 2 cubre */
+        });
 
       // Etapa 2 — listado completo (autoritativo; lento por N+1 del backend).
-      try {
-        const versions = await listFieldCertifications(fieldId);
-        if (!alive()) return;
-        if (versions.length === 0) {
-          setCert({ ...INITIAL, state: "empty" });
-          return;
-        }
-        const latest = pickLatest(versions);
-        let verify: CertificationVerify | null = null;
+      // Corre en paralelo al sondeo para no sumar latencias.
+      const listing = (async () => {
         try {
-          verify = await verifyCertification(latest.certUid);
+          const versions = await listFieldCertifications(fieldId);
+          if (!alive()) return;
+          if (versions.length === 0) {
+            setCert({ ...INITIAL, state: "empty" });
+            return;
+          }
+          const latest = pickLatest(versions);
+          let verify: CertificationVerify | null = null;
+          try {
+            verify = await verifyCertification(latest.certUid);
+          } catch {
+            /* /verify es best-effort — el badge cae a "pending" */
+          }
+          if (!alive()) return;
+          setCert(readyState(latest, versions, verify));
         } catch {
-          /* /verify es best-effort — el badge cae a "pending" */
+          if (alive()) {
+            setCert((prev) =>
+              prev.state === "ready" ? prev : { ...INITIAL, state: "error" }
+            );
+          }
         }
-        if (!alive()) return;
-        setCert(readyState(latest, versions, verify));
-      } catch {
-        if (alive()) {
-          setCert((prev) =>
-            prev.state === "ready" ? prev : { ...INITIAL, state: "error" }
-          );
-        }
-      }
+      })();
+
+      await Promise.all([probe, listing]);
     })();
 
     return () => {
       cancelled = true;
     };
-  }, [fieldId, demo, enabled, isMockId]);
+  }, [fieldId, enabled, isMockId]);
 
   return cert;
 }

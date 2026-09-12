@@ -3,14 +3,14 @@
 import React, { useState, useRef, useEffect } from "react";
 import dynamic from "next/dynamic";
 import { useRouter } from "next/navigation";
-import { FIELDS_DATA, FieldItem } from "@/data/fieldsData";
+import { FieldItem } from "@/data/fieldsData";
 import FloatingIslandHeader from "@/components/FloatingIslandHeader";
 import FieldCardsList from "@/components/FieldCardsList";
 import FieldDetailView from "@/components/FieldDetailView";
 import Hero from "@/components/landing/Hero";
 import SiteFooter from "@/components/landing/SiteFooter";
 import { useFieldTimelapse } from "@/hooks/useFieldTimelapse";
-import { DEMO_TIMELAPSE_MANIFEST } from "@/data/timelapseMockData";
+import { EMPTY_TIMELAPSE_MANIFEST } from "@/lib/emptyManifest";
 import { Satellite, Move3d } from "lucide-react";
 import gsap from "gsap";
 import { useGSAP } from "@gsap/react";
@@ -51,16 +51,20 @@ const FieldTerrainGPU = dynamic(
   }
 );
 
+type BackendStatus = "loading" | "live" | "error";
+
 export default function Home() {
-  const [selectedField, setSelectedField] = useState<FieldItem>(FIELDS_DATA[0]);
+  const [selectedField, setSelectedField] = useState<FieldItem | null>(null);
   const [isFieldExpanded, setIsFieldExpanded] = useState(false);
   const [searchQuery, setSearchQuery] = useState("");
-  const [backendFields, setBackendFields] = useState<FieldItem[]>(FIELDS_DATA);
-  const [timelapseManifest, setTimelapseManifest] = useState<TimelapseManifest>(DEMO_TIMELAPSE_MANIFEST);
+  const [backendFields, setBackendFields] = useState<FieldItem[]>([]);
+  const [backendStatus, setBackendStatus] = useState<BackendStatus>("loading");
+  const [timelapseManifest, setTimelapseManifest] = useState<TimelapseManifest | null>(null);
   const [terrainFallback, setTerrainFallback] = useState<string | null>(null);
   const [terrainReveal, setTerrainReveal] = useState(false);
 
-  // Fetch fields and timelapse data from real backend on mount
+  // Fetch fields and timelapse data from real backend on mount.
+  // Sin backend no hay catálogo mock: la lista queda vacía con estado de error.
   useEffect(() => {
     const fetchBackendData = async () => {
       try {
@@ -68,39 +72,45 @@ export default function Home() {
         if (!health.ok) throw new Error("backend offline");
 
         const fieldsRes = await fetch(`${API_URL}/v1/fields`);
-        if (fieldsRes.ok) {
-          const fieldsData = await fieldsRes.json();
-          if (Array.isArray(fieldsData) && fieldsData.length > 0) {
-            const mapped: FieldItem[] = fieldsData.map((f: ApiFieldResponse, idx: number) =>
-              adaptBackendField(f, idx)
-            );
-            // Solo los campos que existen en la BD — sin mezclar el catálogo mock
-            setBackendFields(mapped);
-            setSelectedField((prev) =>
-              mapped.some((f) => f.id === prev.id) ? prev : mapped[0]
-            );
+        if (!fieldsRes.ok) throw new Error(`fields -> ${fieldsRes.status}`);
 
-            const firstFieldId = mapped[0].id;
-            const tlRes = await fetch(`${API_URL}/v1/fields/${firstFieldId}/timelapses`);
-            if (tlRes.ok) {
-              const datasets = await tlRes.json();
-              const readyDataset = datasets.find(
-                (d: { status: string }) => d.status === "ready" || d.status === "partial"
+        const fieldsData = await fieldsRes.json();
+        if (!Array.isArray(fieldsData)) throw new Error("fields payload inválido");
+
+        const mapped: FieldItem[] = fieldsData.map((f: ApiFieldResponse, idx: number) =>
+          adaptBackendField(f, idx)
+        );
+        // Solo los campos que existen en la BD
+        setBackendFields(mapped);
+        setBackendStatus("live");
+        setSelectedField((prev) =>
+          prev && mapped.some((f) => f.id === prev.id) ? prev : (mapped[0] ?? null)
+        );
+
+        const firstFieldId = mapped[0]?.id;
+        if (firstFieldId) {
+          const tlRes = await fetch(`${API_URL}/v1/fields/${firstFieldId}/timelapses`);
+          if (tlRes.ok) {
+            const datasets = await tlRes.json();
+            const readyDataset = datasets.find(
+              (d: { status: string }) => d.status === "ready" || d.status === "partial"
+            );
+            if (readyDataset) {
+              const manifestRes = await fetch(
+                `${API_URL}/v1/fields/${firstFieldId}/timelapses/${readyDataset.id}`
               );
-              if (readyDataset) {
-                const manifestRes = await fetch(
-                  `${API_URL}/v1/fields/${firstFieldId}/timelapses/${readyDataset.id}`
-                );
-                if (manifestRes.ok) {
-                  const raw = await manifestRes.json();
-                  setTimelapseManifest(normalizeTimelapseManifest(raw));
-                }
+              if (manifestRes.ok) {
+                const raw = await manifestRes.json();
+                setTimelapseManifest(normalizeTimelapseManifest(raw));
               }
             }
           }
         }
       } catch {
-        console.info("[TERRIA] Backend not reachable — using demo mock data");
+        console.info("[TERRIA] Backend not reachable — sin datos de fallback");
+        setBackendStatus("error");
+        setBackendFields([]);
+        setSelectedField(null);
       }
     };
 
@@ -108,7 +118,9 @@ export default function Home() {
   }, []);
 
   // Synchronized timelapse engine shared by map parcels + detail panel
-  const timelapse = useFieldTimelapse({ manifest: timelapseManifest });
+  const timelapse = useFieldTimelapse({
+    manifest: timelapseManifest ?? EMPTY_TIMELAPSE_MANIFEST,
+  });
   const router = useRouter();
   const { owner } = useOwnerAuth();
 
@@ -172,11 +184,15 @@ export default function Home() {
           if (manifestRes.ok) {
             const raw = await manifestRes.json();
             setTimelapseManifest(normalizeTimelapseManifest(raw));
+            return;
           }
         }
       }
+      // El campo no tiene timelapse publicado — serie vacía, sin datos mock.
+      setTimelapseManifest(null);
     } catch {
-      // Backend not responding for this field — keep active manifest
+      // Backend caído para este campo — serie vacía, sin datos mock.
+      setTimelapseManifest(null);
     }
   };
 
@@ -214,7 +230,9 @@ export default function Home() {
             Explorador territorial
           </span>
           <span className="font-mono text-[10px] uppercase tracking-[0.2em] text-piedra">
-            {backendFields.length} parcelas en cartera
+            {backendStatus === "error"
+              ? "Backend sin conexión"
+              : `${backendFields.length} parcelas en cartera`}
           </span>
         </div>
 
@@ -227,7 +245,7 @@ export default function Home() {
             <div className="relative flex-1 w-full h-full min-h-0">
               <Planet3D
                 embedded={true}
-                selectedField={selectedField}
+                selectedField={selectedField ?? undefined}
                 fields={backendFields}
                 isExpanded={isFieldExpanded}
                 onSelectField={handleSelectField}
@@ -237,7 +255,7 @@ export default function Home() {
               />
 
               {/* Terreno 3D real — WebGPU sobre DEM; aparece al aterrizar el flyTo */}
-              {isFieldExpanded && terrainReveal && !terrainFallback && (
+              {isFieldExpanded && selectedField && terrainReveal && !terrainFallback && (
                 <div className="absolute inset-0 z-20 animate-in fade-in duration-300">
                   <FieldTerrainGPU
                     key={selectedField.id}
@@ -250,7 +268,7 @@ export default function Home() {
               )}
 
               {/* Tira de información — lo único sobre la escena */}
-              {isFieldExpanded && (
+              {isFieldExpanded && selectedField && (
                 <div className="absolute inset-x-0 bottom-0 z-30 flex items-center justify-between gap-3 border-t border-piedra-soft/70 bg-papel/85 px-4 py-2.5 backdrop-blur-sm">
                   <div className="flex min-w-0 items-center gap-3">
                     <button
@@ -280,7 +298,7 @@ export default function Home() {
             ref={cardsPanelRef}
             className="lg:col-span-5 xl:col-span-4 h-full min-h-0 flex flex-col overflow-hidden"
           >
-            {isFieldExpanded ? (
+            {isFieldExpanded && selectedField ? (
               <FieldDetailView
                 field={selectedField}
                 onBack={handleBackToCatalog}
@@ -292,6 +310,7 @@ export default function Home() {
                 onSelectField={handleSelectField}
                 filterQuery={searchQuery}
                 fields={backendFields}
+                backendStatus={backendStatus}
                 className="h-full min-h-0"
               />
             )}

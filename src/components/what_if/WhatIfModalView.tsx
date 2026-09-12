@@ -11,7 +11,7 @@ import WhatIfHeroCard from "./WhatIfHeroCard";
 import TwinLotsMetricCard from "./TwinLotsMetricCard";
 import MultiCropRankingTable from "./MultiCropRankingTable";
 import WhatIfAuditCard from "./WhatIfAuditCard";
-import { X, SlidersHorizontal, Sparkles, AlertCircle, CheckCircle2 } from "lucide-react";
+import { X, SlidersHorizontal, AlertCircle, CheckCircle2, Loader2, Unplug } from "lucide-react";
 
 gsap.registerPlugin(useGSAP);
 
@@ -275,35 +275,57 @@ export default function WhatIfModalView({
           </div>
 
           {/* HERO PRINCIPAL: Podio y Veredicto Contrafáctico */}
-          <WhatIfHeroCard simulation={simulation} source={source} />
+          {simulation ? (
+            <>
+              <WhatIfHeroCard simulation={simulation} source={source} />
 
-          {/* GRID INFERIOR: Tabla de 10 Granos + Desglose Vectorial 5D y Auditoría */}
-          <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
-            {/* TABLA DE 10 GRANOS SAGYP (7 / 12 cols) */}
-            <div className="lg:col-span-7">
-              <MultiCropRankingTable
-                ranking={simulation.ranking}
-                surfaceHa={simulation.surfaceHa}
-                realCrop={simulation.realCrop}
-                selectedCropId={selectedCropId}
-                onSelectCrop={setSelectedCropId}
-              />
+              {/* GRID INFERIOR: Tabla de 10 Granos + Desglose Vectorial 5D y Auditoría */}
+              <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
+                {/* TABLA DE 10 GRANOS SAGYP (7 / 12 cols) */}
+                <div className="lg:col-span-7">
+                  <MultiCropRankingTable
+                    ranking={simulation.ranking}
+                    surfaceHa={simulation.surfaceHa}
+                    realCrop={simulation.realCrop}
+                    selectedCropId={selectedCropId}
+                    onSelectCrop={setSelectedCropId}
+                  />
+                </div>
+
+                {/* VECTOR 5D + AUDITORÍA (5 / 12 cols) */}
+                <div className="lg:col-span-5 space-y-4">
+                  <TwinLotsMetricCard
+                    metrics={simulation.modelMetrics}
+                    targetYear={targetYear}
+                    frozenInputs={simulation.frozenInputs}
+                  />
+
+                  <WhatIfAuditCard
+                    contentHash={simulation.contentHash}
+                    auditUrls={simulation.auditUrls}
+                  />
+                </div>
+              </div>
+            </>
+          ) : (
+            <div className="flex flex-col items-center justify-center gap-2 rounded-3xl border border-piedra-soft bg-papel py-16 text-center">
+              {source === "error" ? (
+                <>
+                  <Unplug className="h-8 w-8 text-piedra-soft" />
+                  <p className="text-xs font-mono text-bosque/70">
+                    Sin conexión con el backend — no se pudo simular el escenario.
+                  </p>
+                </>
+              ) : (
+                <>
+                  <Loader2 className="h-8 w-8 animate-spin text-piedra-soft" />
+                  <p className="text-xs font-mono text-bosque/70">
+                    Calculando escenario contrafáctico…
+                  </p>
+                </>
+              )}
             </div>
-
-            {/* VECTOR 5D + AUDITORÍA (5 / 12 cols) */}
-            <div className="lg:col-span-5 space-y-4">
-              <TwinLotsMetricCard
-                metrics={simulation.modelMetrics}
-                targetYear={targetYear}
-                frozenInputs={simulation.frozenInputs}
-              />
-
-              <WhatIfAuditCard
-                contentHash={simulation.contentHash}
-                auditUrls={simulation.auditUrls}
-              />
-            </div>
-          </div>
+          )}
         </div>
       </div>
     </div>,

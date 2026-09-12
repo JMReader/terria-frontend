@@ -9,7 +9,7 @@ import TwinLotsMetricCard from "./TwinLotsMetricCard";
 import MultiCropRankingTable from "./MultiCropRankingTable";
 import WhatIfAuditCard from "./WhatIfAuditCard";
 import WhatIfModalView from "./WhatIfModalView";
-import { Maximize2, AlertCircle, CheckCircle2 } from "lucide-react";
+import { Maximize2, AlertCircle, CheckCircle2, Loader2, Unplug } from "lucide-react";
 
 export interface WhatIfPanelProps {
   field: FieldItem;
@@ -164,29 +164,51 @@ export default function WhatIfPanel({
       </div>
 
       {/* Hero Principal con Podio de Ganadores */}
-      <WhatIfHeroCard simulation={simulation} source={source} />
+      {simulation ? (
+        <>
+          <WhatIfHeroCard simulation={simulation} source={source} />
 
-      {/* Métricas de Lotes Gemelos (Vector 5D) */}
-      <TwinLotsMetricCard
-        metrics={simulation.modelMetrics}
-        targetYear={targetYear}
-        frozenInputs={simulation.frozenInputs}
-      />
+          {/* Métricas de Lotes Gemelos (Vector 5D) */}
+          <TwinLotsMetricCard
+            metrics={simulation.modelMetrics}
+            targetYear={targetYear}
+            frozenInputs={simulation.frozenInputs}
+          />
 
-      {/* Leaderboard Multicultivo de 10 Granos */}
-      <MultiCropRankingTable
-        ranking={simulation.ranking}
-        surfaceHa={simulation.surfaceHa}
-        realCrop={simulation.realCrop}
-        selectedCropId={selectedCropId}
-        onSelectCrop={setSelectedCropId}
-      />
+          {/* Leaderboard Multicultivo de 10 Granos */}
+          <MultiCropRankingTable
+            ranking={simulation.ranking}
+            surfaceHa={simulation.surfaceHa}
+            realCrop={simulation.realCrop}
+            selectedCropId={selectedCropId}
+            onSelectCrop={setSelectedCropId}
+          />
 
-      {/* Tarjeta de Sello Criptográfico y Auditoría Pública */}
-      <WhatIfAuditCard
-        contentHash={simulation.contentHash}
-        auditUrls={simulation.auditUrls}
-      />
+          {/* Tarjeta de Sello Criptográfico y Auditoría Pública */}
+          <WhatIfAuditCard
+            contentHash={simulation.contentHash}
+            auditUrls={simulation.auditUrls}
+          />
+        </>
+      ) : (
+        <div className="flex flex-col items-center justify-center gap-2 rounded-3xl border border-piedra-soft bg-papel py-14 text-center">
+          {source === "error" ? (
+            <>
+              <Unplug className="h-7 w-7 text-piedra-soft" />
+              <p className="text-xs font-mono text-bosque/70">
+                Sin conexión con el backend — no se pudo simular el escenario.
+              </p>
+            </>
+          ) : (
+            <>
+              <Loader2 className="h-7 w-7 animate-spin text-piedra-soft" />
+              <p className="text-xs font-mono text-bosque/70">
+                Calculando escenario contrafáctico…
+              </p>
+            </>
+          )}
+        </div>
+      )}
 
       {/* Modal Expandido de Pantalla Completa */}
       <WhatIfModalView

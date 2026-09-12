@@ -12,13 +12,12 @@ import {
 import { TimelapseManifest } from "@/types/terria";
 import { API_BASE } from "@/lib/terriaApi";
 import { normalizeTimelapseManifest } from "@/lib/timelapseNormalizer";
-import { DEMO_TIMELAPSE_MANIFEST } from "@/data/timelapseMockData";
+import { EMPTY_TIMELAPSE_MANIFEST } from "@/lib/emptyManifest";
 import { useFieldTimelapse } from "@/hooks/useFieldTimelapse";
 import { useFieldCertification } from "@/hooks/useFieldCertification";
 import PassportDiorama from "@/components/passport/PassportDiorama";
 import PassportTimelapse from "@/components/passport/PassportTimelapse";
 import SharePanel from "@/components/passport/SharePanel";
-import CertificatePdfCard from "@/components/passport/CertificatePdfCard";
 import SolanaAuditCard from "@/components/certification/SolanaAuditCard";
 import ValuationPanel from "@/components/valuation/ValuationPanel";
 import WhatIfPanel from "@/components/what_if/WhatIfPanel";
@@ -43,19 +42,17 @@ type TabId = (typeof TABS)[number]["id"];
 /**
  * Pasaporte digital de parcela — layout dashboard:
  * izquierda la identidad + diorama 3D dominante; derecha un panel limpio con
- * segmented control (Datos / Futurología / What-if) y el certificado blockchain
- * anclado abajo. El certificado Solana vive dentro de "Datos" como auditoría
- * on-chain de la serie observada.
+ * segmented control (Datos / Futurología / What-if). El certificado Solana
+ * vive dentro de "Datos" como auditoría on-chain de la serie observada.
  */
 export default function ParcelPassportView({
   field,
   mode,
-  source,
   shareState,
   onCopyLink,
   onUnshare,
 }: ParcelPassportViewProps) {
-  const [manifest, setManifest] = useState<TimelapseManifest>(DEMO_TIMELAPSE_MANIFEST);
+  const [manifest, setManifest] = useState<TimelapseManifest | null>(null);
   const [tab, setTab] = useState<TabId>("tiempo");
   // Cada pestaña se monta la primera vez que se visita y luego queda viva
   // (hidden) — preserva el estado de formularios y evita re-fetches.
@@ -87,7 +84,7 @@ export default function ParcelPassportView({
         const raw = await manifestRes.json();
         if (!cancelled) setManifest(normalizeTimelapseManifest(raw));
       } catch {
-        /* backend offline — queda el manifest demo */
+        /* backend offline — la serie queda vacía, sin manifest de fallback */
       }
     })();
     return () => {
@@ -95,16 +92,10 @@ export default function ParcelPassportView({
     };
   }, [field.id]);
 
-  const timelapse = useFieldTimelapse({ manifest });
+  const timelapse = useFieldTimelapse({ manifest: manifest ?? EMPTY_TIMELAPSE_MANIFEST });
   // Certificación blockchain real: lista versiones del campo, elige la vigente
-  // y consulta /verify. En modo demo (field del mock) muestra datos etiquetados.
-  const cert = useFieldCertification(field.id, { demo: source === "demo" });
-  const publicUrl =
-    shareState.isPublished && shareState.publicSlug
-      ? typeof window !== "undefined"
-        ? `${window.location.origin}/p/${shareState.publicSlug}`
-        : `/p/${shareState.publicSlug}`
-      : null;
+  // y consulta /verify. Sin backend el estado queda en error — sin datos demo.
+  const cert = useFieldCertification(field.id);
 
   return (
     <div className="flex min-h-screen w-full flex-col bg-nube text-bosque select-none lg:h-screen lg:overflow-hidden">
@@ -124,11 +115,6 @@ export default function ParcelPassportView({
             </span>
           </div>
           <div className="flex shrink-0 items-center gap-3">
-            {source === "demo" && (
-              <span className="rounded-full border border-piedra-soft bg-papel px-2.5 py-0.5 text-[10px] font-mono font-bold uppercase tracking-wider text-piedra">
-                demo
-              </span>
-            )}
             {mode === "owner" && onCopyLink && onUnshare && (
               <SharePanel shareState={shareState} onCopyLink={onCopyLink} onUnshare={onUnshare} />
             )}
@@ -248,17 +234,6 @@ export default function ParcelPassportView({
                 <WhatIfPanel field={field} />
               </div>
             )}
-          </div>
-
-          {/* Certificado blockchain — anclado abajo, siempre visible */}
-          <div className="shrink-0 border-t border-piedra-soft/70 bg-nube/60 px-4 py-3">
-            <CertificatePdfCard
-              pdfUrl={cert.pdfUrl}
-              certPageUrl={cert.certPageUrl}
-              publicUrl={publicUrl}
-              loading={cert.state === "loading"}
-              className="border-0 bg-transparent p-0"
-            />
           </div>
         </div>
       </main>

@@ -71,11 +71,15 @@ export default function ParcelPassportLoader({ id, slug, mode }: ParcelPassportL
     );
   }
 
-  if (!field || source === "not-found" || source === "forbidden") {
+  if (!field || source === "not-found" || source === "forbidden" || source === "error") {
     return (
       <Unavailable
         message={
-          mode === "public" ? "Pasaporte no disponible" : "Parcela no encontrada"
+          source === "error"
+            ? "Sin conexión con el servidor TERRIA"
+            : mode === "public"
+              ? "Pasaporte no disponible"
+              : "Parcela no encontrada"
         }
       />
     );

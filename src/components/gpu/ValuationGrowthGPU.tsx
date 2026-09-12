@@ -662,7 +662,7 @@ export default function ValuationGrowthGPU({
                 : "border-piedra-soft bg-papel/85 text-piedra"
             }`}
           >
-            {source === "live" ? "● En vivo" : source === "demo" ? "Demo local" : "Conectando…"}
+            {source === "live" ? "● En vivo" : source === "error" ? "Sin conexión" : "Conectando…"}
           </span>
         </div>
         {valuation && (

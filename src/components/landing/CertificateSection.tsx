@@ -2,10 +2,11 @@ import React from "react";
 import SectionHeading from "@/components/brand/SectionHeading";
 import ParcelCertificate from "@/components/landing/ParcelCertificate";
 import VersionTimeline, { DEFAULT_VERSIONS } from "@/components/landing/VersionTimeline";
-import { FieldItem, FIELDS_DATA } from "@/data/fieldsData";
+import { FieldItem } from "@/data/fieldsData";
 
 export interface CertificateSectionProps {
-  field?: FieldItem;
+  /** Parcela real del backend a destacar — sin fallback a datos mock. */
+  field: FieldItem;
 }
 
 /**
@@ -13,7 +14,7 @@ export interface CertificateSectionProps {
  * versiones históricas de la parcela.
  */
 export default function CertificateSection({ field }: CertificateSectionProps) {
-  const featured = field ?? FIELDS_DATA[1];
+  const featured = field;
 
   return (
     <section id="certificado" className="relative bg-nube px-6 py-20 sm:px-10 sm:py-28">

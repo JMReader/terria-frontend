@@ -27,4 +27,4 @@ export interface PublicParcelPayload extends FieldItem {
   publishedAt?: string;
 }
 
-export type PassportSource = "live" | "demo" | "loading" | "not-found" | "forbidden";
+export type PassportSource = "live" | "loading" | "not-found" | "forbidden" | "error";

@@ -88,7 +88,7 @@ export default function ValuationHeroCard({
             ? "● En vivo"
             : source === "loading"
               ? "Conectando…"
-              : "Demo local"}
+              : "Sin conexión"}
         </span>
       </div>
 

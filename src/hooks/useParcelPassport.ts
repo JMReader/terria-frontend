@@ -8,7 +8,6 @@ import {
   ShareState,
 } from "@/types/passport";
 import {
-  findMockField,
   getField,
   getPublicField,
   publishField,
@@ -35,7 +34,7 @@ function shareStateOf(field: FieldItem): ShareState {
  * Resuelve la parcela del pasaporte:
  *  - mode owner → GET /v1/fields/{id} (la pertenencia la garantiza el gate/UX).
  *  - mode public → GET /v1/public/fields/{slug} sin auth.
- * Fallback: mock local (modo demo sin backend).
+ * Sin backend la fuente queda en `error` — no hay fallback a datos mock.
  */
 export function useParcelPassport({ id, slug, mode }: UseParcelPassportArgs) {
   const { token } = useOwnerAuth();
@@ -61,27 +60,31 @@ export function useParcelPassport({ id, slug, mode }: UseParcelPassportArgs) {
       setSource(src);
     };
 
-    const fail = (src: PassportSource) => {
+    const fail = (err: unknown) => {
       if (requestRef.current !== requestId) return;
-      const mock = findMockField(id ?? slug ?? "");
-      if (mock) {
-        applyField(mock, "demo");
-      } else {
-        setField(null);
-        setSource(src);
-      }
+      setField(null);
+      // 404 → no existe · 403 → privada · resto → backend sin conexión.
+      const msg = err instanceof Error ? err.message : "";
+      setSource(
+        /-> 404$/.test(msg) ? "not-found" : /-> 40[13]$/.test(msg) ? "forbidden" : "error"
+      );
     };
 
     if (mode === "public" && slug) {
       getPublicField(slug)
         .then((f) => applyField(f, "live"))
-        .catch(() => fail("not-found"));
+        .catch(fail);
     } else if (mode === "owner" && id) {
       getField(id)
         .then((f) => applyField(f, "live"))
-        .catch(() => fail("not-found"));
+        .catch(fail);
     } else {
-      fail("not-found");
+      queueMicrotask(() => {
+        if (requestRef.current === requestId) {
+          setField(null);
+          setSource("not-found");
+        }
+      });
     }
   }, [id, slug, mode]);
 

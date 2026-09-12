@@ -1,4 +1,4 @@
-import { FIELDS_DATA, FieldItem } from "./fieldsData";
+import { FieldItem } from "./fieldsData";
 import { FIELD_SECTORS_DATA, NEIGHBOR_CADASTRE_PARCELS, ParcelSector } from "./sectorsData";
 import { ParcelGeoJsonFeature, ParcelsGeoJsonCollection } from "@/types/parcels";
 import { TimelineState, TimelapseManifest } from "@/types/terria";
@@ -212,7 +212,7 @@ export function generateParcelsGeoJson(
   timelineState?: TimelineState | null,
   manifest?: TimelapseManifest | null
 ): ParcelsGeoJsonCollection {
-  const fields = fieldsList && fieldsList.length > 0 ? fieldsList : FIELDS_DATA;
+  const fields = fieldsList ?? [];
 
   // 1. Resolve timeline progress
   let timelineProgress = 0.5;

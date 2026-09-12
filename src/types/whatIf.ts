@@ -56,7 +56,7 @@ export interface WhatIfSimulation {
   frozenInputs?: Record<string, unknown>;
 }
 
-export type WhatIfSource = "loading" | "live" | "demo" | "error";
+export type WhatIfSource = "loading" | "live" | "error";
 
 export interface FieldWhatIfRequest {
   targetYear: number;
