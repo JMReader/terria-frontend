@@ -295,6 +295,7 @@ export default function WhatIfModalView({
               <TwinLotsMetricCard
                 metrics={simulation.modelMetrics}
                 targetYear={targetYear}
+                frozenInputs={simulation.frozenInputs}
               />
 
               <WhatIfAuditCard

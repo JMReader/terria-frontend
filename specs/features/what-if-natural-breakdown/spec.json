@@ -1,0 +1,162 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "feature_id": "what-if-natural-breakdown",
+  "title": "What-If v2.3: Dimensiones Biofísicas en Lenguaje Natural, Desglose Financiero por Hectárea e Impacto Monetario Total del Lote",
+  "version": "1.0.0",
+  "status": "DRAFT — En revisión de usuario (No implementar aún)",
+  "metadata": {
+    "target_repo": "terria-frontend",
+    "author": "Antigravity",
+    "created_at": "2026-09-12T10:40:00-03:00",
+    "affected_components": [
+      "src/components/what_if/TwinLotsMetricCard.tsx",
+      "src/components/what_if/WhatIfHeroCard.tsx",
+      "src/components/what_if/MultiCropRankingTable.tsx",
+      "src/components/what_if/WhatIfModalView.tsx",
+      "src/types/whatIf.ts",
+      "src/data/whatIfMockData.ts"
+    ]
+  },
+  "objectives": [
+    "Humanizar las 5 dimensiones biofísicas de gemelos eliminando la notación técnica interna (F_soil, F_topo, F_init) y reemplazando los badges 'OK' por valores agronómicos naturales.",
+    "Exponer el desglose financiero transparente por hectárea (Ingreso Bruto, Costos Directos BCR, Margen Neto y Cotización MATba) para que el margen no sea una 'caja negra'.",
+    "Mostrar en la tabla de los 10 granos el impacto monetario total sobre el campo completo (total_lot_diff_usd) para evaluar el volumen económico global de la decisión."
+  ],
+  "specs": {
+    "1_dimensiones_biofisicas_lenguaje_natural": {
+      "target_component": "TwinLotsMetricCard.tsx",
+      "current_issue": "Muestra 'Suelo (F_soil)', 'Topografía (F_topo)', 'Humedad (F_init)' con badges genéricos 'OK'. Parece un log de depuración y no entrega valor tangible al productor.",
+      "redesign": {
+        "title": "Condiciones Biofísicas del Lote",
+        "remove_tokens": ["F_soil", "F_topo", "F_init", "status: 'OK'"],
+        "fields": [
+          {
+            "id": "suelo",
+            "label": "Suelo",
+            "source_raw": "frozenInputs.environmental_vector_5d.soil_clay_pct & soil_sand_pct",
+            "natural_display_format": "{clay}% Arcilla · {texture_class}",
+            "example_real": "26.6% Arcilla · Franco Arcilloso",
+            "helper": "ISRIC SoilGrids & Cartas INTA"
+          },
+          {
+            "id": "topografia",
+            "label": "Topografía",
+            "source_raw": "frozenInputs.environmental_vector_5d.elevation_dem_m & mean_slope_deg",
+            "natural_display_format": "{elevation} msnm · Pendiente {slope}°",
+            "example_real": "60 msnm · Pendiente 0.40° (Plano)",
+            "helper": "Copernicus DEM 30m"
+          },
+          {
+            "id": "humedad",
+            "label": "Humedad",
+            "source_raw": "frozenInputs.environmental_vector_5d.radar_backscatter_db",
+            "natural_display_format": "{db} dB Radar SAR",
+            "example_real": "-17.40 dB · Humedad normal",
+            "helper": "Sentinel-1 Banda C"
+          },
+          {
+            "id": "balance_hidrico",
+            "label": "Balance Hídrico",
+            "source_raw": "frozenInputs.environmental_vector_5d.water_balance_mm",
+            "natural_display_format": "{mm} mm ({status})",
+            "example_real": "-670 mm · Déficit estival",
+            "helper": "AgERA5 (Lluvia vs Evapotranspiración)"
+          },
+          {
+            "id": "historial_ndvi",
+            "label": "Historial NDVI",
+            "source_raw": "frozenInputs.environmental_vector_5d.historical_ndvi_max",
+            "natural_display_format": "{ndvi} máx estival",
+            "example_real": "0.426 máx histórico",
+            "helper": "Sentinel-2 L2A (10m)"
+          }
+        ],
+        "ui_layout": "Grid de 2 o 3 columnas con tarjetas pequeñas limpias, donde cada tarjeta muestra el título en mayúscula suave, el valor natural en negrita y el sensor/fuente en gris tenue."
+      }
+    },
+    "2_desglose_economico_por_hectarea": {
+      "target_component": "WhatIfHeroCard.tsx (y popover/drawer en cada cultivo)",
+      "current_issue": "Solo se ve el Margen Neto final ($602 USD/ha) y la diferencia vs real (+252 USD/ha). El usuario no sabe cuánto se gasta en insumos ni a qué precio se vendió.",
+      "redesign": {
+        "title": "Estructura Financiera por Hectárea (Ecuación BCR / MATba)",
+        "formula_display": "Margen Neto = Ingreso Bruto - Costos Directos",
+        "items": [
+          {
+            "id": "gross_income",
+            "label": "Ingreso Bruto Proyectado",
+            "unit": "USD/ha",
+            "source": "financials.grossIncomeUsdHa",
+            "calculation_formula": "Rinde Proyectado (tn/ha) × Precio MATba (USD/tn)",
+            "example_real": "USD 1,179.20 / ha"
+          },
+          {
+            "id": "direct_costs",
+            "label": "Costos Directos (Labores & Insumos)",
+            "unit": "USD/ha",
+            "source": "financials.costsUsdHa",
+            "calculation_formula": "Semilla + Fitosanitarios + Fertilizantes + Cosecha (BCR GEA)",
+            "example_real": "USD 577.20 / ha"
+          },
+          {
+            "id": "net_margin",
+            "label": "Margen Neto Resultante",
+            "unit": "USD/ha",
+            "source": "financials.netMarginUsdHa",
+            "calculation_formula": "Ingreso Bruto - Costos Directos",
+            "example_real": "USD 602.00 / ha"
+          },
+          {
+            "id": "diff_vs_real",
+            "label": "Variación vs Siembra Real",
+            "unit": "USD/ha",
+            "source": "financials.diffNetMarginUsdHa",
+            "calculation_formula": "Margen Simulado - Margen Real Cosechado",
+            "example_real": "+USD 252.00 / ha (vs soja_1ra USD 350/ha)"
+          }
+        ],
+        "ui_layout": "Cinta o strip financiero horizontal de 4 métricas conectadas con signos (+, -, =), o desglose en dos columnas (Ingresos vs Egresos) con tipografía tabular."
+      }
+    },
+    "3_impacto_monetario_total_en_tabla": {
+      "target_component": "MultiCropRankingTable.tsx",
+      "current_issue": "La tabla solo lista los granos con rinde y margen por hectárea. Para saber el impacto monetario en el campo hay que hacer la cuenta a mano.",
+      "redesign": {
+        "title": "Ranking Oficial Multicultivo con Impacto en Lote",
+        "new_columns_and_data": [
+          {
+            "header": "Impacto Total Lote",
+            "field": "financials.totalLotDiffUsd",
+            "format": "currency_usd_full",
+            "description": "Multiplicación de la diferencia de margen neto por las hectáreas totales del establecimiento (surfaceHa).",
+            "example_positive": "+$21,982 USD (en 87.2 ha)",
+            "example_negative": "-$8,745 USD (en 87.2 ha)",
+            "visual_style": "Texto monoespaciado en verde musgo (+USD) o tono tierra/rojizo (-USD)"
+          },
+          {
+            "header": "Rinde SAGyP Dpto",
+            "field": "benchmarkDeptYieldTnHa",
+            "format": "tn_ha",
+            "description": "Muestra la media oficial histórica del departamento como referencia contextual.",
+            "example": "5.10 tn/ha"
+          },
+          {
+            "header": "Categoría",
+            "field": "category",
+            "format": "badge",
+            "values": ["Cereal", "Oleaginosa", "Especialidad", "Industrial"]
+          }
+        ],
+        "row_layout_visual": [
+          "#1 | Maíz (Gruesa · Cereal) | Rinde: 5.36 tn/ha (Base SAGyP: 5.10 tn/ha, +5.2%) | Margen: $602 USD/ha (+$252) | IMPACTO TOTAL: +$21,982 USD",
+          "#2 | Sorgo Granífero (Cereal) | Rinde: 3.37 tn/ha (Base SAGyP: 3.20 tn/ha, +5.2%) | Margen: $250 USD/ha (-$100) | IMPACTO TOTAL: -$8,745 USD",
+          "#5 | Maní (Especialidad) | Rinde: 1.89 tn/ha (Base SAGyP: 1.80 tn/ha, +5.2%) | Margen: $798 USD/ha (+$448) | IMPACTO TOTAL: +$39,035 USD"
+        ]
+      }
+    }
+  },
+  "wireframe_preview": {
+    "twin_lots_card": "┌─ CONDICIONES BIOFÍSICAS DEL LOTE (Cluster Gemelos a 50 km) ───────────────────────┐\n│  Candidatos: 180 parcelas    ·    Gemelos Calibrados: 27 lotes    ·    Afinidad: 94.2%   │\n├───────────────────────────────────────────────────────────────────────────────────┤\n│  [SUELO]                  [TOPOGRAFÍA]            [HUMEDAD]                       │\n│  26.6% Arcilla            60 msnm                 -17.40 dB                       │\n│  Franco Arcillosa (INTA)  Pendiente 0.40° (Plano) Radar SAR Sentinel-1            │\n│                                                                                   │\n│  [BALANCE HÍDRICO]        [HISTORIAL NDVI]                                        │\n│  -670 mm                  0.426 máx estival                                       │\n│  Déficit estival AgERA5   Sentinel-2 L2A (10m)                                    │\n└───────────────────────────────────────────────────────────────────────────────────┘",
+    "financial_breakdown_card": "┌─ DESGLOSE FINANCIERO POR HECTÁREA · MAÍZ (Cosecha 2023) ──────────────────────────┐\n│  Ingreso Bruto            Costos Directos (BCR)   Margen Neto           vs Real   │\n│  $1,179.20 USD/ha   ─     $577.20 USD/ha    =     $602.00 USD/ha        +$252/ha  │\n│  (5.36 tn × $220 MATba)   (Siembra, labores, agro) (+72% de rentabilidad) (vs Soja)│\n└───────────────────────────────────────────────────────────────────────────────────┘",
+    "ranking_table_row": "┌─ RANKING 10 GRANOS SAGyP ─────────────────────────────────────────────────────────┐\n│ #   CULTIVO            CAT.    RINDE PROY.  SAGyP DPTO   MARGEN NETO   TOTAL LOTE │\n│ #1  Maíz               Cereal  5.36 tn/ha   5.10 tn/ha   $602 USD/ha  +$21,982 USD│\n│ #2  Sorgo Granífero    Cereal  3.37 tn/ha   3.20 tn/ha   $250 USD/ha   -$8,745 USD│\n│ #3  Trigo Pan          Cereal  2.52 tn/ha   2.40 tn/ha   $326 USD/ha   -$2,128 USD│\n│ #5  Maní               Espec.  1.89 tn/ha   1.80 tn/ha   $798 USD/ha  +$39,035 USD│\n└───────────────────────────────────────────────────────────────────────────────────┘"
+  }
+}

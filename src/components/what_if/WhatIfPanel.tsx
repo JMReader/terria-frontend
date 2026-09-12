@@ -170,6 +170,7 @@ export default function WhatIfPanel({
       <TwinLotsMetricCard
         metrics={simulation.modelMetrics}
         targetYear={targetYear}
+        frozenInputs={simulation.frozenInputs}
       />
 
       {/* Leaderboard Multicultivo de 10 Granos */}
