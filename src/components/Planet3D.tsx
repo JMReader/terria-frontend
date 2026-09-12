@@ -4,7 +4,7 @@ import React, { useEffect, useRef, useCallback } from "react";
 // Use MapLibre GL — 100% open source, no API token required, full Mapbox GL JS compatibility
 import * as maplibregl from "maplibre-gl";
 import "maplibre-gl/dist/maplibre-gl.css";
-import { FIELDS_DATA, FieldItem } from "@/data/fieldsData";
+import { FieldItem } from "@/data/fieldsData";
 import { useFieldTimelapse } from "@/hooks/useFieldTimelapse";
 import { generateParcelsGeoJson } from "@/data/backendParcelsGeoJson";
 import { ZoomIn, ZoomOut, Info } from "lucide-react";
@@ -89,7 +89,7 @@ export default function Planet3D({
   const markersRef = useRef<maplibregl.Marker[]>([]);
   const [showInfo, setShowInfo] = React.useState(false);
 
-  const fieldsList = fields && fields.length > 0 ? fields : FIELDS_DATA;
+  const fieldsList = React.useMemo(() => fields ?? [], [fields]);
   const fieldsListRef = useRef(fieldsList);
   const onSelectRef = useRef(onSelectField);
   const onDiveEndRef = useRef(onDiveEnd);
@@ -270,9 +270,9 @@ export default function Planet3D({
         const feats = map.queryRenderedFeatures(e.point, { layers });
         const f = feats?.[0];
         if (f?.properties?.isPortfolio) {
-          const match =
-            fieldsListRef.current.find((x) => x.id === f.properties?.fieldId) ??
-            FIELDS_DATA.find((x) => x.id === f.properties?.fieldId);
+          const match = fieldsListRef.current.find(
+            (x) => x.id === f.properties?.fieldId
+          );
           if (match) onSelectRef.current?.(match);
         }
       } catch { /* noop */ }
@@ -315,18 +315,26 @@ export default function Planet3D({
     markersRef.current = [];
 
     fieldsList.forEach((field) => {
+      // El wrapper es del Marker: MapLibre lo posiciona vía style.transform —
+      // el scale del hover va en el hijo para no pisar ese translate.
       const el = document.createElement("button");
       const isSel = field.id === selectedField?.id;
       el.setAttribute("aria-label", `Ver terreno 3D de ${field.name}`);
       el.style.cssText = `
         position: relative; width: ${isSel ? 20 : 14}px; height: ${isSel ? 20 : 14}px;
-        border-radius: 9999px; border: 2.5px solid #f4f6f2; cursor: pointer;
+        padding: 0; border: 0; background: transparent; cursor: pointer;
+      `;
+      const dot = document.createElement("span");
+      dot.style.cssText = `
+        display: block; width: 100%; height: 100%;
+        border-radius: 9999px; border: 2.5px solid #f4f6f2;
         background: ${isSel ? "#4a6b46" : "#1c3a2e"};
         box-shadow: 0 1px 6px rgba(18,39,30,0.45), 0 0 0 ${isSel ? 7 : 4}px rgba(74,107,70,${isSel ? 0.35 : 0.18});
         transition: transform .18s ease, box-shadow .18s ease;
       `;
-      el.onmouseenter = () => (el.style.transform = "scale(1.3)");
-      el.onmouseleave = () => (el.style.transform = "scale(1)");
+      el.appendChild(dot);
+      el.onmouseenter = () => (dot.style.transform = "scale(1.3)");
+      el.onmouseleave = () => (dot.style.transform = "scale(1)");
       el.onclick = (ev) => {
         ev.stopPropagation();
         onSelectRef.current?.(field);
