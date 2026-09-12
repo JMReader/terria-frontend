@@ -1,3 +1,4 @@
+/// <reference types="@webgpu/types" />
 "use client";
 
 /**
@@ -8,107 +9,117 @@
  * con depth+MSAA → blit al canvas. Orbita con drag/wheel/pinch, damping suave y
  * entrada animada (el relieve "crece" desde plano).
  *
+ * Integración timelapse (spec diorama): recibe el estado compartido del
+ * timelapse y reacciona a la fecha seleccionada —
+ *  - drapea el tile Sentinel-2 real (rgb/ndvi) sobre el polígono del campo con
+ *    wipe direccional entre capturas (texPrev → texCur)
+ *  - recolorea lotes por NDVI vía uniform lotColors[] (sin rebuildear geometría)
+ *  - vistas analíticas: ndvi / satelital / térmica / humedad / topografía
+ *  - telemetría atmosférica ERA5 + cotas métricas Haversine del perímetro
+ *
  * Sin WebGPU o si el DEM falla → onFallback() para que el caller muestre la
  * vista MapLibre con terrain+pitch.
  */
 
 import React, { useEffect, useRef, useState } from "react";
 import type { FieldItem } from "@/data/fieldsData";
+import type { useFieldTimelapse } from "@/hooks/useFieldTimelapse";
 import { fetchHeightmap } from "@/lib/terrain/heightmap";
 import { buildTerrainScene, computeRegion } from "@/lib/terrain/buildScene";
 import { perspective, lookAt, multiply } from "@/lib/terrain/mat4";
+import { TERRAIN_WGSL, BLIT_WGSL, MAX_LOTS } from "@/lib/terrain/terrainWgsl";
+import { generateParcelsGeoJson } from "@/data/backendParcelsGeoJson";
+import AnalyticalViewSelector, { type TerrainViewMode } from "./AnalyticalViewSelector";
+import AtmosphericTelemetryOverlay from "./AtmosphericTelemetryOverlay";
+
+type Timelapse = ReturnType<typeof useFieldTimelapse>;
 
 const NUBE: [number, number, number, number] = [0.957, 0.965, 0.949, 1];
 
-const TERRAIN_WGSL = /* wgsl */ `
-struct Cam {
-  mvp: mat4x4<f32>,
-  sun: vec4<f32>,       // xyz dir to sun, w intensity
-  ambient: vec4<f32>,   // rgb ambient
-  fogColor: vec4<f32>,
-  fogRange: vec4<f32>,  // x near, y far
-  params: vec4<f32>,    // x relief scale, y contour step (m)
-  eye: vec4<f32>,
-};
-@group(0) @binding(0) var<uniform> cam: Cam;
-
-struct VIn {
-  @location(0) position: vec3f,
-  @location(1) normal: vec3f,
-  @location(2) color: vec4f,
-  @location(3) elev: f32,
-};
-struct VOut {
-  @builtin(position) clip: vec4f,
-  @location(0) nrm: vec3f,
-  @location(1) col: vec4f,
-  @location(2) wpos: vec3f,
-  @location(3) elev: f32,
+const hexRgb = (hex: string): [number, number, number] => {
+  const m = /^#?([0-9a-f]{6})/i.exec(hex.trim());
+  if (!m) return [0.36, 0.48, 0.29];
+  const v = parseInt(m[1], 16);
+  return [((v >> 16) & 255) / 255, ((v >> 8) & 255) / 255, (v & 255) / 255];
 };
 
-@vertex fn vs_main(v: VIn) -> VOut {
-  var p = v.position;
-  p.y = p.y * cam.params.x;
-  var o: VOut;
-  o.clip = cam.mvp * vec4f(p, 1.0);
-  o.nrm = v.normal;
-  o.col = v.color;
-  o.wpos = p;
-  o.elev = v.elev;
-  return o;
-}
-
-@fragment fn fs_main(f: VOut) -> @location(0) vec4f {
-  let n = normalize(f.nrm);
-  let sunDir = normalize(cam.sun.xyz);
-  let dif = max(dot(n, sunDir), 0.0);
-  let wrap = pow(dif * 0.8 + 0.2, 1.15);
-
-  var base = f.col.rgb;
-  // Curvas de nivel: las derivadas (fwidth) no pueden ir dentro de un if
-  // no-uniforme en WGSL — se calculan siempre y se enmascaran con select().
-  let step = cam.params.y;
-  let dd = abs(fract(f.elev / step + 0.5) - 0.5) * step;
-  let w = max(fwidth(f.elev) * 1.5, 0.0001);
-  let line = (1.0 - smoothstep(0.0, w, dd)) * select(0.0, 1.0, f.elev > -9000.0);
-  base = mix(base, base * 0.6, line * 0.45);
-
-  var lit = base * (cam.ambient.rgb + cam.sun.w * wrap * vec3f(1.0, 0.96, 0.88));
-  let dist = length(cam.eye.xyz - f.wpos);
-  let fog = smoothstep(cam.fogRange.x, cam.fogRange.y, dist);
-  lit = mix(lit, cam.fogColor.rgb, fog * 0.9);
-  return vec4f(lit, f.col.a);
-}
-`;
-
-const BLIT_WGSL = /* wgsl */ `
-@group(0) @binding(0) var srcTex: texture_2d<f32>;
-@group(0) @binding(1) var srcSmp: sampler;
-@fragment fn fs_main(@location(0) uv: vec2f) -> @location(0) vec4f {
-  return textureSampleLevel(srcTex, srcSmp, uv, 0.0);
-}
-`;
+/** modos analíticos ↔ layer del timelapse compartido */
+const LAYER_TO_MODE: Record<string, TerrainViewMode> = {
+  rgb: "rgb",
+  ndvi: "ndvi",
+  weather: "moisture",
+};
+const MODE_TO_LAYER: Record<TerrainViewMode, "rgb" | "ndvi" | "weather"> = {
+  ndvi: "ndvi",
+  rgb: "rgb",
+  thermal: "weather",
+  moisture: "weather",
+  topography: "ndvi",
+};
+const MODE_INDEX: Record<TerrainViewMode, number> = {
+  ndvi: 0,
+  rgb: 1,
+  thermal: 2,
+  moisture: 3,
+  topography: 4,
+};
 
 export interface FieldTerrainGPUProps {
   field: FieldItem;
+  timelapse?: Timelapse;
   className?: string;
   onFallback?: (reason: string) => void;
 }
 
 type Status = "loading" | "dem" | "build" | "ready" | "failed";
 
+/** Textura vgpu bindable (Texture de vgpu/core). */
+type SatTexture = { gpu: GPUTexture; createView(): GPUTextureView; destroy(): void };
+
+interface CotaChip {
+  key: string;
+  x: number; // % del ancho
+  y: number; // % del alto
+  label: string;
+  behind: boolean;
+}
+
 export default function FieldTerrainGPU({
   field,
+  timelapse,
   className = "",
   onFallback,
 }: FieldTerrainGPUProps) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const [status, setStatus] = useState<Status>("loading");
+  const [cotas, setCotas] = useState<CotaChip[]>([]);
+  const [mode, setMode] = useState<TerrainViewMode>(
+    LAYER_TO_MODE[timelapse?.activeLayer ?? "ndvi"] ?? "ndvi"
+  );
   const failedRef = useRef(false);
   const onFallbackRef = useRef(onFallback);
+  const tlRef = useRef(timelapse);
+  const modeRef = useRef(mode);
+  const [lastLayer, setLastLayer] = useState(timelapse?.activeLayer);
+
+  // el controller del timelapse manda la vista por defecto del terreno
+  // (patrón "adjust state during render" — sin efecto extra)
+  const layer = timelapse?.activeLayer;
+  if (layer !== lastLayer) {
+    setLastLayer(layer);
+    if (layer) setMode(LAYER_TO_MODE[layer] ?? "ndvi");
+  }
+
   useEffect(() => {
     onFallbackRef.current = onFallback;
+    tlRef.current = timelapse;
+    modeRef.current = mode;
   });
+
+  const handleModeChange = (m: TerrainViewMode) => {
+    setMode(m);
+    timelapse?.setActiveLayer?.(MODE_TO_LAYER[m]);
+  };
 
   useEffect(() => {
     const canvas = canvasRef.current;
@@ -169,6 +180,39 @@ export default function FieldTerrainGPU({
           eye: new Float32Array(4),
         });
 
+        const initLotColors: number[][] = Array.from({ length: MAX_LOTS }, (_, i) => {
+          const c = scene.lotColors[Math.min(i, scene.lotColors.length - 1)];
+          return [c[0], c[1], c[2], 1];
+        });
+        const env = uniforms(gpu, {
+          lotColors: initLotColors,
+          sat: new Float32Array([1, 0, 0, 0]), // wipe, dir, mix, hasTex
+          met: new Float32Array([0, 21, 0.5, 0]), // precipN, tempC, ndvi, cloud
+          range: new Float32Array([scene.minH, scene.reliefDelta, 0, 0]),
+          uvT: new Float32Array([1, 1, 0, 0]), // uv-campo → uv-asset
+        });
+
+        // placeholder 1×1 para texturas satelitales antes del primer fetch
+        const dev = gpu.device;
+        const blankTex = dev.createTexture({
+          size: [1, 1],
+          format: "rgba8unorm-srgb",
+          usage: ["texture_binding", "copy_dst"],
+        });
+        gpu.gpu.queue.writeTexture(
+          { texture: blankTex.gpu },
+          new Uint8Array([120, 130, 110, 255]),
+          { bytesPerRow: 4 },
+          [1, 1]
+        );
+
+        const samp = sampler(gpu, {
+          magFilter: "linear",
+          minFilter: "linear",
+          addressModeU: "clamp-to-edge",
+          addressModeV: "clamp-to-edge",
+        });
+
         const mkGeometry = (b: typeof scene.terrain) =>
           geometry(gpu, {
             buffers: [
@@ -188,21 +232,36 @@ export default function FieldTerrainGPU({
                 attributes: { elev: "float32" },
                 data: b.elevs as Float32Array<ArrayBuffer>,
               },
+              {
+                attributes: { lot: "float32" },
+                data: b.lotIdx as Float32Array<ArrayBuffer>,
+              },
+              {
+                attributes: { satUv: "float32x2" },
+                data: b.satUv as Float32Array<ArrayBuffer>,
+              },
             ],
             indices: b.indices,
           });
 
+        const texSet = {
+          cam,
+          env,
+          texPrev: blankTex,
+          texCur: blankTex,
+          satSmp: samp,
+        };
         const terrainDraw = draw(gpu, {
           shader: TERRAIN_WGSL,
           geometry: mkGeometry(scene.terrain),
-          set: { cam },
+          set: texSet,
           cull: "none",
           depth: { write: true, compare: "less" },
         });
         const wallsDraw = draw(gpu, {
           shader: TERRAIN_WGSL,
           geometry: mkGeometry(scene.walls),
-          set: { cam },
+          set: texSet,
           cull: "none",
           depth: { write: true, compare: "less" },
           blend: "alpha",
@@ -224,6 +283,105 @@ export default function FieldTerrainGPU({
         } catch (e) {
           console.warn("[FieldTerrainGPU] blit compile:", e);
         }
+
+        // ---- timelapse: texturas Sentinel-2 + estado por fecha ---------------
+        const texCache = new Map<string, SatTexture>();
+        const inflight = new Set<string>();
+        const failedKeys = new Set<string>();
+        let curTex: SatTexture = blankTex;
+        let prevTex: SatTexture = blankTex;
+        let curAssetKey = "";
+        let lastColorKey = "";
+
+        // objetivo animado — el frame loop interpola hacia acá
+        const targetSat = { mix: 0, has: 0 };
+        const wipe = { t: 1, dir: 0 };
+
+        const loadSatellite = async (url: string, bbox: number[] | undefined) => {
+          const key = url;
+          if (inflight.has(key) || failedKeys.has(key)) return;
+          inflight.add(key);
+          try {
+            let tex = texCache.get(key);
+            if (!tex) {
+              const res = await fetch(url, { mode: "cors", signal: AbortSignal.timeout(12000) });
+              if (!res.ok) throw new Error(`asset ${res.status}`);
+              const bmp = await createImageBitmap(await res.blob());
+              const t = dev.createTexture({
+                size: [bmp.width, bmp.height],
+                format: "rgba8unorm-srgb",
+                usage: ["texture_binding", "copy_dst", "render_attachment"],
+              });
+              gpu.gpu.queue.copyExternalImageToTexture(
+                { source: bmp },
+                { texture: t.gpu },
+                [bmp.width, bmp.height]
+              );
+              bmp.close();
+              tex = t;
+              texCache.set(key, tex);
+            }
+            if (cancelled) return;
+
+            // uv-campo → uv-asset: si el asset trae bbox, mapear
+            const fb = scene.fieldBBox;
+            if (bbox && bbox.length >= 4) {
+              const [aMinLng, aMinLat, aMaxLng, aMaxLat] = bbox;
+              const sU = (fb.maxLng - fb.minLng) / Math.max(aMaxLng - aMinLng, 1e-9);
+              const sV = (fb.maxLat - fb.minLat) / Math.max(aMaxLat - aMinLat, 1e-9);
+              const oU = (fb.minLng - aMinLng) / Math.max(aMaxLng - aMinLng, 1e-9);
+              // v: campo mide lat→v con v=0 al norte; el asset igual tras flipY
+              const oV = (aMaxLat - fb.maxLat) / Math.max(aMaxLat - aMinLat, 1e-9);
+              env.set({ uvT: new Float32Array([sU, sV, oU, oV]) });
+            } else {
+              env.set({ uvT: new Float32Array([1, 1, 0, 0]) });
+            }
+
+            if (key !== curAssetKey) {
+              // wipe: la captura actual pasa a prev, la nueva entra con transición
+              prevTex = curTex;
+              curTex = tex;
+              curAssetKey = key;
+              wipe.t = 0;
+              wipe.dir = Math.random() > 0.5 ? 1 : 0;
+              terrainDraw.set({ texPrev: prevTex, texCur: curTex });
+              wallsDraw.set({ texPrev: prevTex, texCur: curTex });
+            }
+            targetSat.has = 1;
+            targetSat.mix = 1;
+          } catch (err) {
+            console.warn("[FieldTerrainGPU] sat tile:", err);
+            failedKeys.add(key);
+          } finally {
+            inflight.delete(key);
+          }
+        };
+
+        const refreshLotColors = () => {
+          const tl = tlRef.current;
+          const ts = tl?.timelineState;
+          const date = ts?.selectedDate ?? "2024-01-01";
+          const geo = generateParcelsGeoJson(
+            date,
+            "ndvi",
+            field.id,
+            [field],
+            ts ?? undefined,
+            tl?.manifest ?? undefined
+          );
+          const byId = new Map(
+            geo.features.map((f) => [f.properties?.id, f.properties?.color])
+          );
+          const next: number[][] = initLotColors.map((c) => [...c]);
+          scene.lotIds.forEach((id, i) => {
+            const hex = byId.get(id);
+            if (typeof hex === "string") {
+              const c = hexRgb(hex);
+              next[i + 1] = [c[0], c[1], c[2], 1];
+            }
+          });
+          env.set({ lotColors: next });
+        };
 
         // ---- orbit state --------------------------------------------------
         const targetY = 1.15;
@@ -282,6 +440,11 @@ export default function FieldTerrainGPU({
         canvas.addEventListener("pointercancel", onPointerUp);
         canvas.addEventListener("wheel", onWheel, { passive: false });
 
+        // envío animado: valores actuales que interpolan hacia target*
+        const cur = { satMix: 0, has: 0, precip: 0, temp: 21, ndvi: 0.5, cloud: 0 };
+        let cotaTimer = 0;
+        const lastChips: CotaChip[] = [];
+
         const fov = (32 * Math.PI) / 180;
         const loop = frameLoop(gpu, (frame) => {
           const now = performance.now();
@@ -294,6 +457,63 @@ export default function FieldTerrainGPU({
           orbit.pitch += (orbit.tPitch - orbit.pitch) * k;
           orbit.dist += (orbit.tDist - orbit.dist) * k;
 
+          // ---- timelapse sync ------------------------------------------
+          const tl = tlRef.current;
+          const ts = tl?.timelineState;
+          const m = MODE_INDEX[modeRef.current] ?? 0;
+
+          // colores de lote por fecha (una vez por cambio de estado)
+          const colorKey = `${ts?.selectedDate ?? ""}|${ts?.satellite?.id ?? ""}`;
+          if (colorKey !== lastColorKey) {
+            lastColorKey = colorKey;
+            refreshLotColors();
+          }
+
+          // textura satelital según modo
+          const wantLayer = m === 1 ? "rgb" : "ndvi";
+          const asset = ts?.satellite?.assets?.find((a) => a.layer === wantLayer);
+          if (asset?.url && (m === 0 || m === 1)) {
+            if (asset.url !== curAssetKey) {
+              void loadSatellite(asset.url, asset.bbox);
+            } else {
+              targetSat.mix = 1; // ya cargada — reaparecer al volver al modo
+            }
+          } else {
+            targetSat.mix = 0;
+          }
+
+          // met: precip7d normalizada /80mm, tempC media, ndvi, nubosidad
+          const wd = ts?.weather;
+          const rain7 = wd?.precipitation7d?.value ?? wd?.precipitationDay?.value ?? 0;
+          const tMax = wd?.temperatureMax?.value;
+          const tMin = wd?.temperatureMin?.value;
+          const tempC =
+            tMax != null && tMin != null ? (tMax + tMin) / 2 : tMax ?? tMin ?? 21;
+          const ndvi = ts?.satellite?.ndvi?.mean?.value ?? 0.5;
+          const cloud = ts?.satellite?.quality?.cloudFraction ?? 0;
+
+          const lerp = (a: number, b: number) => a + (b - a) * 0.12;
+          cur.satMix = lerp(cur.satMix, targetSat.mix);
+          cur.has = lerp(cur.has, targetSat.has);
+          cur.precip = lerp(cur.precip, Math.min(rain7 / 80, 1));
+          cur.temp = lerp(cur.temp, tempC);
+          cur.ndvi = lerp(cur.ndvi, ndvi);
+          cur.cloud = lerp(cur.cloud, cloud);
+          wipe.t = Math.min(1, wipe.t + 0.02);
+
+          cam.set({
+            params: new Float32Array([
+              0.15 + 0.85 * ease, // relief crece en la entrada
+              scene.contourStep,
+              t,
+              m,
+            ]),
+          });
+          env.set({
+            sat: new Float32Array([wipe.t, wipe.dir, cur.satMix, cur.has]),
+            met: new Float32Array([cur.precip, cur.temp, cur.ndvi, cur.cloud]),
+          });
+
           const relief = 0.15 + 0.85 * ease;
           const eye: [number, number, number] = [
             Math.sin(orbit.yaw) * Math.cos(orbit.pitch) * orbit.dist,
@@ -305,11 +525,44 @@ export default function FieldTerrainGPU({
             perspective(fov, aspect, 0.5, 220),
             lookAt(eye, [0, targetY, 0], [0, 1, 0])
           );
-          cam.set({
-            mvp,
-            eye: new Float32Array([eye[0], eye[1], eye[2], 0]),
-            params: new Float32Array([relief, scene.contourStep, 0, 0]),
-          });
+          cam.set({ mvp, eye: new Float32Array([eye[0], eye[1], eye[2], 0]) });
+
+          // cotas del perímetro → chips HTML (≈10 Hz)
+          cotaTimer += 1;
+          if (cotaTimer >= 6 && scene.segments.length > 0) {
+            cotaTimer = 0;
+            const chips: CotaChip[] = [];
+            scene.segments.forEach((seg, i) => {
+              const [x, y, z] = seg.mid;
+              const cy = y * relief;
+              const cx = mvp[0] * x + mvp[4] * cy + mvp[8] * z + mvp[12];
+              const cyy = mvp[1] * x + mvp[5] * cy + mvp[9] * z + mvp[13];
+              const cz = mvp[2] * x + mvp[6] * cy + mvp[10] * z + mvp[14];
+              const cw = mvp[3] * x + mvp[7] * cy + mvp[11] * z + mvp[15];
+              if (cw <= 0.01) return;
+              const nx = cx / cw;
+              const ny = cyy / cw;
+              if (nx < -1 || nx > 1 || ny < -1 || ny > 1) return;
+              const label =
+                seg.meters >= 1000
+                  ? `${(seg.meters / 1000).toFixed(2)} km`
+                  : `${Math.round(seg.meters)} m`;
+              chips.push({
+                key: `c${i}`,
+                x: ((nx + 1) / 2) * 100,
+                y: ((1 - ny) / 2) * 100,
+                label,
+                behind: cz / cw > 0.92,
+              });
+            });
+            const sig = chips.map((c) => `${c.x.toFixed(1)},${c.y.toFixed(1)}`).join(";");
+            const prevSig = lastChips.map((c) => `${c.x.toFixed(1)},${c.y.toFixed(1)}`).join(";");
+            if (sig !== prevSig || chips.length !== lastChips.length) {
+              lastChips.length = 0;
+              lastChips.push(...chips);
+              setCotas(chips);
+            }
+          }
 
           const [w, h] = surf.size;
           if (off.size[0] !== w || off.size[1] !== h) off.resize([w, h]);
@@ -325,6 +578,8 @@ export default function FieldTerrainGPU({
         cleanup = () => {
           loop.stop();
           offError?.();
+          texCache.forEach((t) => t.destroy());
+          blankTex.destroy();
           canvas.removeEventListener("pointerdown", onPointerDown);
           canvas.removeEventListener("pointermove", onPointerMove);
           canvas.removeEventListener("pointerup", onPointerUp);
@@ -349,6 +604,8 @@ export default function FieldTerrainGPU({
     };
   }, [field]);
 
+  const timelineState = timelapse?.timelineState;
+
   return (
     <div className={`relative ${className}`}>
       <canvas
@@ -356,6 +613,38 @@ export default function FieldTerrainGPU({
         className="absolute inset-0 h-full w-full"
         style={{ touchAction: "none", cursor: "grab" }}
       />
+
+      {/* cotas métricas del perímetro — flotan sobre la arista proyectada */}
+      {status === "ready" &&
+        cotas.map((c) => (
+          <span
+            key={c.key}
+            className={`pointer-events-none absolute z-10 -translate-x-1/2 -translate-y-1/2 rounded-full border px-1.5 py-0.5 font-mono text-[9px] tabular-nums transition-opacity duration-300 ${
+              c.behind
+                ? "border-piedra/40 bg-papel/50 text-bosque/40 opacity-40"
+                : "border-piedra/60 bg-papel/80 text-bosque/80 opacity-90"
+            }`}
+            style={{ left: `${c.x}%`, top: `${c.y}%` }}
+          >
+            {c.label}
+          </span>
+        ))}
+
+      {/* selector de vista analítica */}
+      {status === "ready" && (
+        <div className="absolute right-3 top-3 z-20">
+          <AnalyticalViewSelector mode={mode} onChange={handleModeChange} />
+        </div>
+      )}
+
+      {/* telemetría atmosférica sincronizada con la fecha del timelapse */}
+      {status === "ready" && timelineState && (
+        <AtmosphericTelemetryOverlay
+          timelineState={timelineState}
+          className="absolute left-3 top-3 z-20"
+        />
+      )}
+
       {status !== "ready" && status !== "failed" && (
         <div className="absolute inset-0 flex items-center justify-center bg-nube">
           <div className="flex flex-col items-center gap-2">

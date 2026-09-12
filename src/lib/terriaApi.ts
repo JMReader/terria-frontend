@@ -162,6 +162,7 @@ function adaptFrame(f: ApiFrame): TimelapseFrame {
       expiresAt: "2027-12-31T23:59:59Z",
       resolutionM: 10,
       checksum: a.sha256 ?? undefined,
+      bbox: a.bbox ?? undefined,
     })),
   };
 }

@@ -28,6 +28,16 @@ export function useFieldTimelapse({
   const [speed, setSpeed] = useState<1 | 2 | 4>(1);
   const [activeLayer, setActiveLayer] = useState<TimelapseLayer>("ndvi");
 
+  // Al cambiar de manifest (otro campo o dataset recargado) el índice previo
+  // queda inválido — resetear a la última observación usable del nuevo set.
+  const manifestRef = useRef(manifest);
+  useEffect(() => {
+    if (manifestRef.current === manifest) return;
+    manifestRef.current = manifest;
+    setIsPlaying(false);
+    setDateIndex(defaultIndex);
+  }, [manifest, defaultIndex]);
+
   const selectedDate = dates[dateIndex] || dates[0] || "";
 
   // Deterministic 2-clock resolver (Participant 4 spec)

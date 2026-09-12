@@ -269,6 +269,7 @@ export default function Home() {
                   <FieldTerrainGPU
                     key={selectedField.id}
                     field={selectedField}
+                    timelapse={timelapse}
                     onFallback={() => setTerrainFallback("gpu")}
                     className="h-full w-full"
                   />
