@@ -137,7 +137,7 @@ export default function ValuationHeroCard({
           ))}
         </div>
         <div className="mt-1.5 flex items-center justify-between text-[9px] font-mono text-piedra">
-          <span>Vial · Agro · Mercado</span>
+          <span>Hídrico · Suelo · Renta</span>
           <span className="font-bold text-bosque/60">
             ×{(v.projectedValueUsdHa / v.baseValueUsdHa).toFixed(3)} compuesto
           </span>

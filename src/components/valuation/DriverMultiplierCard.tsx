@@ -104,7 +104,11 @@ export default function DriverMultiplierCard({
               neutral ? "text-piedra" : "text-bosque/80"
             }`}
           >
-            {neutral ? "±0.0%" : `+${driver.impactPercentage.toFixed(1)}%`}
+            {neutral
+              ? "±0.0%"
+              : driver.impactPercentage >= 0
+                ? `+${driver.impactPercentage.toFixed(1)}%`
+                : `${driver.impactPercentage.toFixed(1)}%`}
           </span>
         </div>
 

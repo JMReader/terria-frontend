@@ -14,9 +14,14 @@ export interface ValuationAuditCardProps {
 
 const AUDIT_LABELS: Record<string, string> = {
   idecor: "IDECOR · Catastro Córdoba",
+  idecor_mapas_cordoba: "IDECOR · Catastro Córdoba",
   overpass: "Overpass · OSM Vial",
   osm: "Overpass · OSM Vial",
-  sagyp: "SAGyP · Rindes",
+  osm_overpass_vialidad: "Overpass · OSM Vial",
+  sagyp: "SAGyP · Estimaciones",
+  sagyp_estimaciones_oficiales: "SAGyP · Estimaciones Oficiales",
+  cair_inmobiliarias_rurales: "CAIR · Inmobiliarias Rurales",
+  cair: "CAIR · Inmobiliarias Rurales",
 };
 
 export default function ValuationAuditCard({
