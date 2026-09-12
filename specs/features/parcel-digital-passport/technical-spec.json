@@ -1,98 +1,164 @@
 {
   "$schema": "technical-spec/v1",
   "feature_id": "parcel-digital-passport",
-  "title": "Technical Spec: Rutas direccionables de parcela (/parcela/[id] owner, /p/[slug] público), Pasaporte Digital con 6 secciones reutilizando engines existentes, y capa de compartición public_slug",
-  "version": "1.0.0",
+  "title": "Technical Spec: Auth liviano de dueño (token Bearer), panel /mis-parcelas, rutas direccionables (/parcela/[id] owner-guarded, /p/[slug] público), Pasaporte Digital con 6 secciones reutilizando engines existentes y copiado de link público",
+  "version": "1.1.0",
   "status": "DRAFT — awaiting user approval (Gate 2)",
-  "based_on": "functional-spec v1.0.0",
+  "based_on": "functional-spec v1.1.0",
+  "changelog": [
+    {
+      "version": "1.1.0",
+      "changes": "Se agrega capa de auth (register/login/me, Bearer token), rutas /ingresar y /mis-parcelas, guarda de rutas owner con verificación de pertenencia, y el flujo 'copiar link público' (publica si es privada + copia URL)."
+    }
+  ],
 
   "architecture_decisions": {
+    "auth_architecture": {
+      "strategy": "Auth liviano email+password contra el backend FastAPI. Respuesta {token, owner}; el front guarda el token y lo adjunta como Authorization: Bearer en las llamadas autenticadas.",
+      "token_model": "Bearer token (JWT u opaco — lo define el backend). Persistencia en localStorage para sobrevivir recargas (simple y consistente con la arquitectura client-fetch existente). Upgrade path documentado: cookie httpOnly seteada por el backend.",
+      "session_state": "useOwnerAuth(): { owner, token, status: 'loading'|'authenticated'|'anonymous', login, register, logout }. logout = descartar token (+ POST /v1/auth/logout si existe).",
+      "route_guard": "OwnerGate (client component) envuelve /mis-parcelas y el modo owner del pasaporte: sin sesión → router.replace('/ingresar?next=<url>'). Tras login exitoso, /ingresar redirige a ?next o /mis-parcelas.",
+      "ownership_check": "El backend valida owner_id al servir GET /v1/fields/{id} autenticado y en publish/unpublish. El front además resuelve: 401 → a /ingresar; 403/404 → si la parcela está publicada redirect a /p/{slug}, si no 'no disponible'."
+    },
     "routing": {
-      "strategy": "App Router de Next.js 16 — dos rutas que componen el mismo componente de pasaporte en dos modos",
+      "strategy": "App Router de Next.js 16 — cuatro rutas nuevas; el pasaporte se compone una sola vez y se renderiza en dos modos",
       "routes": [
+        {
+          "path": "/ingresar",
+          "file": "src/app/ingresar/page.tsx",
+          "access": "pública",
+          "notes": "Una pantalla con tabs Ingresar/Crear cuenta (email+password+nombre opcional). Lee ?next= para redirigir tras autenticarse; si ya hay sesión → /mis-parcelas."
+        },
+        {
+          "path": "/mis-parcelas",
+          "file": "src/app/mis-parcelas/page.tsx",
+          "access": "owner",
+          "notes": "OwnerGate + listado de parcelas propias (GET /v1/me/fields). Por fila: nombre, localidad, ha, estado Privada/Pública y acciones Abrir pasaporte / Copiar link / Descompartir."
+        },
         {
           "path": "/parcela/[id]",
           "file": "src/app/parcela/[id]/page.tsx",
-          "mode": "owner",
-          "notes": "params llega como Promise<{ id: string }> (convención Next 15+/16); se tipea con el helper generado PageProps<'/parcela/[id]'>. Resolución de parcela por id de backend o mock; not-found.tsx dedicado para ids inexistentes."
+          "access": "owner + pertenencia",
+          "notes": "params Promise<{id}> + PageProps<'/parcela/[id]'>. OwnerGate en el boundary client; resolución: propia → ParcelPassportView mode='owner'; ajena publicada → redirect /p/{slug}; ajena privada → 'no disponible'; inexistente → notFound()."
         },
         {
           "path": "/p/[slug]",
           "file": "src/app/p/[slug]/page.tsx",
-          "mode": "public",
+          "access": "pública (sin sesión)",
           "notes": "Read-only. generateMetadata({ params }) produce OG title/description/image por parcela para el preview del link y el QR del PDF blockchain."
         }
       ],
-      "shared_component": "ParcelPassportView (client) recibe { field, mode: 'owner' | 'public' } — una sola implementación de las 6 secciones; el modo solo habilita/oculta ShareControls y CTAs de gestión.",
-      "explorador_wiring": "En page.tsx el FieldDetailView se reduce a identidad + CTA; el CTA hace router.push(`/parcela/${field.id}`). El flujo pin→flyTo→FieldTerrainGPU inline se conserva como preview."
+      "shared_component": "ParcelPassportView (client) recibe { field, mode: 'owner' | 'public' } — una sola implementación de las 6 secciones; el modo solo habilita/oculta SharePanel y CTAs de gestión.",
+      "explorador_wiring": "El catálogo público se simplifica; el panel queda en identidad + CTA 'Abrir pasaporte digital': con sesión de dueño → /parcela/{id}; sin sesión → /ingresar?next=/parcela/{id} (o /p/{slug} si ya está publicada)."
     },
     "data_layer": {
-      "new_hook": {
-        "name": "useParcelPassport",
-        "file": "src/hooks/useParcelPassport.ts",
-        "signature": "useParcelPassport({ id?: string; slug?: string; mode: 'owner'|'public' }) => { field, shareState, source: 'live'|'demo'|'loading'|'not-found', actions }",
-        "resolution_order": [
-          "mode owner: GET /v1/fields/{id} → adaptación a FieldItem (+ shareState desde is_published/public_slug).",
-          "mode public: GET /v1/public/fields/{slug} → FieldItem sanitizado (el backend decide qué campos viajan).",
-          "fallback: lookup en FIELDS_DATA por id o por slug derivado del nombre — mantiene viva la demo sin backend.",
-          "race guard por requestId + AbortSignal.timeout(3000) igual que page.tsx actual."
-        ]
-      },
+      "new_hooks": [
+        {
+          "name": "useOwnerAuth",
+          "file": "src/hooks/useOwnerAuth.ts",
+          "signature": "() => { owner: OwnerProfile | null; token: string | null; status: 'loading'|'authenticated'|'anonymous'; login(email,password); register(email,password,name?); logout() }",
+          "notes": "Lee token de localStorage al montar → GET /v1/auth/me para validar/refrescar perfil. Expone helpers para que fetchJson autenticado adjunte el Bearer."
+        },
+        {
+          "name": "useParcelPassport",
+          "file": "src/hooks/useParcelPassport.ts",
+          "signature": "({ id?: string; slug?: string; mode: 'owner'|'public' }) => { field, shareState, source: 'live'|'demo'|'loading'|'not-found'|'forbidden', copyPublicLink, unshare }",
+          "resolution_order": [
+            "mode owner: GET /v1/fields/{id} con Bearer → FieldItem + shareState (is_published/public_slug).",
+            "mode public: GET /v1/public/fields/{slug} sin auth → FieldItem sanitizado.",
+            "fallback: lookup en FIELDS_DATA por id o slug derivado del nombre — mantiene viva la demo sin backend (auth en estado 'demo').",
+            "race guard por requestId + AbortSignal.timeout(3000) igual que page.tsx actual."
+          ]
+        },
+        {
+          "name": "useOwnerFields",
+          "file": "src/hooks/useOwnerFields.ts",
+          "signature": "() => { fields: OwnerFieldRow[]; source; refresh(); copyPublicLink(field); unshare(field) }",
+          "notes": "GET /v1/me/fields con Bearer; fallback demo = FIELDS_DATA mapeadas como propias."
+        }
+      ],
       "terriaApi_extensions": [
-        "getField(id: string): Promise<FieldItem-like> — GET /v1/fields/{id} (verificar existencia; si falta, derivar del listado).",
-        "getPublicField(slug: string): Promise<PublicParcelPayload> — GET /v1/public/fields/{slug} (nuevo contrato backend).",
-        "publishField(id: string) / unpublishField(id: string) — POST nuevos (o PATCH is_published según decida backend).",
-        "fieldCertificatePdfUrl(id: string): string — `${API_BASE}/v1/fields/${id}/certificate.pdf` (endpoint en construcción; el CTA lo intenta con HEAD/descarga y muestra 'en generación' si 404/202)."
+        "registerOwner({email,password,name?}) / loginOwner({email,password}) → {token, owner} — POST /v1/auth/register|login.",
+        "fetchOwnerMe(token) → OwnerProfile — GET /v1/auth/me con Authorization.",
+        "fetchOwnerFields(token) → FieldItem[] — GET /v1/me/fields con Authorization.",
+        "getField(id, token?) → FieldItem — GET /v1/fields/{id} (Bearer opcional; verificar existencia del endpoint).",
+        "getPublicField(slug) → PublicParcelPayload — GET /v1/public/fields/{slug} (nuevo contrato backend).",
+        "publishField(id, token) / unpublishField(id, token) — POST con Bearer (o PATCH is_published según backend).",
+        "fieldCertificatePdfUrl(id) → `${API_BASE}/v1/fields/${id}/certificate.pdf` (endpoint en construcción; el CTA maneja 404/202 como 'en generación').",
+        "authFetch helper: fetchJson con header Authorization inyectado cuando hay token."
       ],
       "reused_engines": [
-        "useFieldTimelapse({ manifest }) — ya sincronizado; la página carga el manifest por field.id con el mismo flujo de page.tsx (timelapses → ready/partial → normalizeTimelapseManifest).",
+        "useFieldTimelapse({ manifest }) — la página carga el manifest por field.id con el mismo flujo de page.tsx.",
         "useFieldValuation(field) — futurología, con fallback computeDemoValuation.",
         "useFieldWhatIf(field) — what-if contrafáctico, con fallback computeDemoWhatIf.",
-        "FieldTerrainGPU — diorama real DEM+vgpu con prop onFallback (mismo patrón que el explorador)."
+        "FieldTerrainGPU — diorama real DEM+vgpu con prop onFallback."
       ]
     },
     "sharing_model": {
-      "owner_controls": "SharePanel en cabecera del pasaporte (solo mode=owner): switch Publicar/Despublicar + URL /p/{slug} copiable + estado. Llama a los endpoints nuevos; ante backend sin soporte muestra 'Compartición pública pendiente de backend' deshabilitado, sin romper la página.",
-      "public_payload": "El backend sanitiza: viaja FieldItem + flags de secciones habilitadas; nunca expone endpoints de mutación. El frontend además oculta SharePanel por mode='public'.",
-      "pdf_companion": "Sección Certificado: SolanaAuditCard (existente, DEMO_SOLANA_CERTIFICATION → luego audit reales) + botón 'Descargar certificado PDF' → fieldCertificatePdfUrl. El content_hash mostrado debe ser el mismo que imprime el PDF."
+      "copy_link_flow": "copyPublicLink(field): si !is_published → publishField(id, token) → espera public_slug → arma `${origin}/p/${slug}` → navigator.clipboard.writeText + toast/confirmación. Si ya está publicada copia directo sin mutar.",
+      "unshare_flow": "unshareField(id, token) → is_published=false → el link /p/{slug} deja de resolver (backend devuelve 404 en el endpoint público).",
+      "public_payload": "El backend sanitiza: viaja FieldItem + flags de secciones; nunca endpoints de mutación ni owner_id sensible. El front además oculta gestión por mode='public'.",
+      "pdf_companion": "Sección Certificado: SolanaAuditCard + botón 'Descargar certificado PDF' → fieldCertificatePdfUrl. El content_hash mostrado debe ser el mismo que imprime el PDF."
     },
     "design_system": {
       "rules": "Anti-slop de specs/features/explorador-terreno-3d/VISTAS.md: una superficie por capa, overlays delgados translúcidos, un acento (musgo), tabular-nums, sin cards anidadas.",
       "tokens": "Paleta Terria existente (bosque, musgo, oliva, piedra, nube, papel, cielo, tierra) — globals.css @theme, no se agregan colores.",
-      "layout": "Página con scroll vertical: cabecera identidad sticky-fina → hero diorama (h-[70vh] en card papel) → secciones apiladas con SectionHeading; nav de anclas opcional en la cabecera."
+      "layout": "Pasaporte: scroll vertical, cabecera identidad → hero diorama (~70vh) → secciones con SectionHeading. /mis-parcelas: tabla/lista plana con separadores finos, misma tipografía mono/semibold del repo. /ingresar: card única centrada, un form, tabs login/registro."
     },
     "next16_conventions": {
       "params_async": "const { id } = await params — params es Promise en page.tsx.",
-      "generated_types": "PageProps<'/parcela/[id]'> / LayoutProps<'/'> según patrón ya usado en layout.tsx (LayoutProps<'/'>).",
-      "metadata": "generateMetadata async en /p/[slug] para OG por parcela.",
-      "client_boundary": "page.tsx de cada ruta = server component fino (params + metadata + fetch inicial opcional); ParcelPassportView y todo lo interactivo = 'use client'. Canvas 3D sigue con dynamic(ssr:false)."
+      "generated_types": "PageProps<'/parcela/[id]'> / LayoutProps<'/'> según patrón ya usado en layout.tsx.",
+      "metadata": "generateMetadata async en /p/[slug] para OG por parcela; /ingresar y /mis-parcelas con metadata estática.",
+      "client_boundary": "page.tsx de cada ruta = server component fino (params + metadata); OwnerGate, ParcelPassportView, formularios y listas interactivas = 'use client'. Canvas 3D sigue con dynamic(ssr:false)."
     }
   },
 
   "module_specifications": {
+    "src/app/ingresar/page.tsx": {
+      "purpose": "Pantalla única de auth: tabs Ingresar / Crear cuenta.",
+      "type": "server component fino + <AuthView/> client",
+      "behavior": "searchParams ?next= para redirect post-auth; ya autenticado → /mis-parcelas."
+    },
+    "src/app/mis-parcelas/page.tsx": {
+      "purpose": "Panel del dueño: listado de sus parcelas con acciones de compartición.",
+      "type": "server component fino + <OwnerGate><OwnerParcelList/></OwnerGate>",
+      "behavior": "Sin sesión → /ingresar?next=/mis-parcelas."
+    },
     "src/app/parcela/[id]/page.tsx": {
       "purpose": "Ruta owner del pasaporte.",
       "type": "server component async",
       "exports": ["default ParcelaPage({ params }: PageProps<'/parcela/[id]'>)"],
-      "behavior": "await params → resuelve field (server fetch con fallback a mock import) → render <ParcelPassportView field mode='owner'/>; id desconocido → notFound()."
+      "behavior": "await params → <OwnerGate><ParcelPassportLoader id mode='owner'/></OwnerGate>; pertenencia la decide la resolución (propia/ajena/inexistente)."
     },
     "src/app/parcela/[id]/not-found.tsx": {
-      "purpose": "Estado 404 limpio: 'Parcela no encontrada' + link al explorador.",
+      "purpose": "404 limpio: 'Parcela no encontrada' + link a /mis-parcelas o explorador.",
       "type": "server component"
     },
     "src/app/p/[slug]/page.tsx": {
       "purpose": "Ruta pública read-only del pasaporte + OG metadata.",
       "type": "server component async",
       "exports": ["generateMetadata({ params })", "default PublicParcelPage({ params }: PageProps<'/p/[slug]'>)"],
-      "behavior": "Slug inválido/despublicado → not-found público sin filtrar datos."
+      "behavior": "Slug inválido/descompartido → not-found público sin filtrar datos."
+    },
+    "src/components/auth/AuthView.tsx": {
+      "purpose": "Formulario de auth con tabs login/registro (email, password, nombre opcional), errores claros y redirect a ?next.",
+      "props": { "next": "string | null" }
+    },
+    "src/components/auth/OwnerGate.tsx": {
+      "purpose": "Guarda client: 'loading' → spinner fino; 'anonymous' → router.replace('/ingresar?next='+pathname); 'authenticated' → children.",
+      "props": { "children": "ReactNode" }
+    },
+    "src/components/auth/SessionStatus.tsx": {
+      "purpose": "Estado de sesión para el header: 'Ingresar' o 'Hola {nombre} · Salir' (+ link Mis parcelas).",
+      "props": {}
+    },
+    "src/components/owner/OwnerParcelList.tsx": {
+      "purpose": "Listado /mis-parcelas: filas planas con nombre, localidad, ha, estado Privada/Pública y acciones Abrir pasaporte / Copiar link / Descompartir. Estado vacío guiado.",
+      "props": { "fields": "OwnerFieldRow[]", "onCopyLink": "(f)=>Promise<void>", "onUnshare": "(f)=>Promise<void>", "onOpen": "(f)=>void" }
     },
     "src/components/passport/ParcelPassportView.tsx": {
       "purpose": "Composición del pasaporte completo.",
-      "props": {
-        "field": "FieldItem",
-        "mode": "'owner' | 'public'",
-        "initialManifest?": "TimelapseManifest (si el server ya lo resolvió)"
-      },
+      "props": { "field": "FieldItem", "mode": "'owner' | 'public'", "initialManifest?": "TimelapseManifest" },
       "children_structure": [
         "PassportHeader (identidad, badge verificado, shareState, SharePanel si owner, ‹ Volver)",
         "PassportDiorama (FieldTerrainGPU dynamic + fallback MapLibre pitch)",
@@ -103,15 +169,15 @@
       ]
     },
     "src/components/passport/PassportHeader.tsx": {
-      "purpose": "Identidad + verificación + estado de publicación.",
-      "props": { "field": "FieldItem", "mode": "PassportMode", "shareState": "ShareState", "onPublish": "() => void", "onUnpublish": "() => void" }
+      "purpose": "Identidad + verificación + estado de compartición + SharePanel (solo owner).",
+      "props": { "field": "FieldItem", "mode": "PassportMode", "shareState": "ShareState", "onCopyLink": "() => Promise<void>", "onUnshare": "() => Promise<void>" }
     },
     "src/components/passport/SharePanel.tsx": {
-      "purpose": "Controles del dueño: publicar/despublicar, copiar link, estado.",
-      "props": { "shareState": "ShareState", "publicUrl": "string | null", "onPublish": "() => Promise<void>", "onUnpublish": "() => Promise<void>" }
+      "purpose": "Control del dueño: 'Copiar link público' (publica si es privada + copia /p/{slug}), 'Descompartir', estado y feedback de copiado.",
+      "props": { "shareState": "ShareState", "publicUrl": "string | null", "onCopyLink": "() => Promise<void>", "onUnshare": "() => Promise<void>" }
     },
     "src/components/passport/PassportDiorama.tsx": {
-      "purpose": "Wrapper del diorama: dynamic import FieldTerrainGPU + tira de info fina (nombre/ha/NDVI) + fallback.",
+      "purpose": "Wrapper del diorama: dynamic import FieldTerrainGPU + tira de info fina + fallback.",
       "props": { "field": "FieldItem" }
     },
     "src/components/passport/PassportTimelapse.tsx": {
@@ -122,75 +188,94 @@
       "purpose": "Card de certificado blockchain: content_hash, estado on-chain, audit_urls y CTA de descarga PDF con estado 'en generación'.",
       "props": { "field": "FieldItem", "pdfUrl": "string", "contentHash?": "string", "auditUrls?": "Record<string,string>" }
     },
+    "src/hooks/useOwnerAuth.ts": {
+      "purpose": "Sesión del dueño: token Bearer persistido, validación /v1/auth/me, login/register/logout.",
+      "exports": ["useOwnerAuth", "interface OwnerProfile { id, email, name? }"]
+    },
+    "src/hooks/useOwnerFields.ts": {
+      "purpose": "Parcelas del dueño + acciones copyPublicLink/unshare.",
+      "exports": ["useOwnerFields", "interface OwnerFieldRow extends FieldItem { shareState }"]
+    },
     "src/hooks/useParcelPassport.ts": {
-      "purpose": "Resolución de parcela por id/slug con fallback mock + acciones publish/unpublish.",
-      "exports": ["useParcelPassport", "interface ShareState { isPublished: boolean; publicSlug: string | null; status: 'private'|'public'|'pending' }"]
+      "purpose": "Resolución de parcela por id/slug con fallback mock + acciones de compartición.",
+      "exports": ["useParcelPassport"]
     },
     "src/types/passport.ts": {
-      "purpose": "Tipos nuevos: PassportMode, ShareState, PublicParcelPayload.",
-      "exports": ["PassportMode", "ShareState", "PublicParcelPayload extends FieldItem"]
+      "purpose": "Tipos nuevos: PassportMode, ShareState, PublicParcelPayload, OwnerProfile, OwnerFieldRow.",
+      "exports": ["PassportMode", "ShareState", "PublicParcelPayload", "OwnerProfile", "OwnerFieldRow"]
     },
     "src/lib/terriaApi.ts (extensión)": {
-      "purpose": "getField, getPublicField, publishField, unpublishField, fieldCertificatePdfUrl + adaptadores snake→camel siguiendo adaptManifest/adaptValuation existentes."
+      "purpose": "authFetch (Bearer), registerOwner/loginOwner/fetchOwnerMe/fetchOwnerFields, getField, getPublicField, publishField, unpublishField, fieldCertificatePdfUrl + adaptadores snake→camel siguiendo el patrón existente."
     },
     "src/components/FieldCardsList.tsx + FieldCard.tsx (simplificación)": {
-      "purpose": "Reducir la fila a dot NDVI + nombre + localidad + ha (eliminar línea de cultivo, NDVI numérico, chevron doble dato).",
+      "purpose": "Reducir la fila pública a dot NDVI + nombre + localidad + ha.",
       "notes": "Sin cambios de firma de props."
     },
     "src/components/FieldDetailView.tsx (reducción)": {
-      "purpose": "Panel del explorador = identidad mínima + CTA 'Abrir pasaporte digital' (router.push). Los tabs Resumen/Timelapse salen del panel — viven solo en el pasaporte.",
+      "purpose": "Panel del explorador = identidad mínima + CTA 'Abrir pasaporte digital' que resuelve según sesión/publicación.",
       "props_nuevas": { "onOpenPassport": "() => void" }
     },
-    "src/app/page.tsx (wiring)": {
-      "purpose": "Pasar onOpenPassport=() => router.push(`/parcela/${selectedField.id}`); mantener preview pin→3D."
+    "src/app/page.tsx + FloatingIslandHeader (wiring)": {
+      "purpose": "onOpenPassport con lógica sesión/publicación; header suma SessionStatus (Ingresar / Hola · Mis parcelas · Salir)."
     }
   },
 
   "implementation_phases": [
     {
       "phase": 1,
-      "name": "Capa de datos y rutas",
+      "name": "Tipos, capa de datos y auth",
       "tasks": [
-        "Crear src/types/passport.ts (PassportMode, ShareState, PublicParcelPayload).",
-        "Extender terriaApi.ts: getField, getPublicField, publishField, unpublishField, fieldCertificatePdfUrl + adaptadores.",
-        "Crear useParcelPassport.ts con resolución owner/public, fallback mock y race guard.",
-        "Crear rutas src/app/parcela/[id]/page.tsx + not-found.tsx y src/app/p/[slug]/page.tsx (params Promise, PageProps, generateMetadata)."
+        "Crear src/types/passport.ts (PassportMode, ShareState, PublicParcelPayload, OwnerProfile, OwnerFieldRow).",
+        "Extender terriaApi.ts: authFetch + registerOwner/loginOwner/fetchOwnerMe/fetchOwnerFields + getField/getPublicField/publishField/unpublishField/fieldCertificatePdfUrl.",
+        "Crear useOwnerAuth.ts (token Bearer + /v1/auth/me) y useOwnerFields.ts.",
+        "Crear useParcelPassport.ts con resolución owner/public, fallback mock y race guard."
       ]
     },
     {
       "phase": 2,
-      "name": "Pasaporte — esqueleto e identidad + diorama",
+      "name": "Rutas y pantallas de auth + panel del dueño",
       "tasks": [
-        "Crear ParcelPassportView.tsx con layout de secciones y PassportHeader.",
-        "Crear PassportDiorama.tsx integrando FieldTerrainGPU (dynamic ssr:false) con tira de info y fallback.",
-        "Wirear carga del manifest de timelapse por field.id (replicar flujo de page.tsx en hook o server)."
+        "Crear src/app/ingresar/page.tsx + AuthView.tsx (tabs login/registro, redirect ?next).",
+        "Crear OwnerGate.tsx + SessionStatus.tsx y montarlos en el header.",
+        "Crear src/app/mis-parcelas/page.tsx + OwnerParcelList.tsx (filas con acciones Abrir/Copiar link/Descompartir).",
+        "Crear rutas src/app/parcela/[id]/page.tsx + not-found.tsx y src/app/p/[slug]/page.tsx (params Promise, PageProps, generateMetadata, guardas)."
       ]
     },
     {
       "phase": 3,
-      "name": "Secciones de features completas",
+      "name": "Pasaporte — esqueleto, identidad y diorama",
       "tasks": [
-        "Crear PassportTimelapse.tsx reusando timelapse/* con useFieldTimelapse compartido.",
-        "Integrar ValuationPanel (futurología) y WhatIfPanel en sus secciones con títulos SectionHeading.",
-        "Crear CertificatePdfCard + sección Certificado con SolanaAuditCard y CTA PDF."
+        "Crear ParcelPassportView.tsx con layout de 6 secciones + PassportHeader.tsx.",
+        "Crear PassportDiorama.tsx integrando FieldTerrainGPU (dynamic ssr:false) con tira de info y fallback.",
+        "Wirear manifest de timelapse por field.id (flujo timelapses→ready/partial→normalizeTimelapseManifest con fallback demo)."
       ]
     },
     {
       "phase": 4,
-      "name": "Compartición owner + vista pública",
+      "name": "Secciones de features completas",
       "tasks": [
-        "Crear SharePanel.tsx con publish/unpublish/copy link + estados pending/error.",
-        "Completar /p/[slug]: payload sanitizado, mode='public' (oculta gestión), OG metadata, 404 suave.",
-        "Verificar consistencia content_hash entre pasaporte y PDF cuando el endpoint exista."
+        "Crear PassportTimelapse.tsx reusando timelapse/* con useFieldTimelapse compartido.",
+        "Integrar ValuationPanel (futurología) y WhatIfPanel con SectionHeading y fuente de datos visible.",
+        "Crear CertificatePdfCard + sección Certificado con SolanaAuditCard y CTA PDF."
       ]
     },
     {
       "phase": 5,
-      "name": "Simplificación del catálogo + wiring + verificación",
+      "name": "Compartición: copiar link + vista pública",
+      "tasks": [
+        "Crear SharePanel.tsx con copyPublicLink (publica si privada + copia) / descompartir / estados pending-error.",
+        "Completar /p/[slug]: payload sanitizado, mode='public' sin gestión, OG metadata, 404 suave.",
+        "Conectar acciones de OwnerParcelList con useOwnerFields (copy link desde el listado).",
+        "Verificar consistencia content_hash pasaporte ↔ PDF cuando el endpoint exista."
+      ]
+    },
+    {
+      "phase": 6,
+      "name": "Simplificación del catálogo, wiring y verificación",
       "tasks": [
         "Reducir FieldCard/FieldCardsList al índice mínimo (dot + nombre + localidad + ha).",
-        "Reducir FieldDetailView a identidad + CTA 'Abrir pasaporte' y wirear router.push en page.tsx.",
-        "Smoke test con Playwright (deps ya instaladas): explorador → CTA → /parcela/{id} → 6 secciones → modo público.",
+        "Reducir FieldDetailView a identidad + CTA 'Abrir pasaporte' con resolución sesión/publicación en page.tsx.",
+        "Smoke test Playwright: /ingresar → /mis-parcelas → copiar link → /parcela/{id} → /p/{slug} → 404s.",
         "npx tsc --noEmit + npm run build limpios."
       ]
     }
@@ -199,15 +284,17 @@
   "verification_plan": {
     "automated": [
       "npx tsc --noEmit (0 errores de TypeScript)",
-      "npm run build (Turbopack) — ambas rutas compilan, dynamic imports OK",
-      "Playwright smoke: navegación catálogo → pasaporte; render de secciones; 404 en id inválido"
+      "npm run build (Turbopack) — todas las rutas compilan, dynamic imports OK",
+      "Playwright smoke: registro/login → mis parcelas → copiar link → pasaporte owner → público sin sesión → guards y 404"
     ],
     "manual": [
-      "Listado muestra solo dot+nombre+localidad+ha por fila.",
-      "/parcela/{id} renderiza diorama orbitable, timelapse con reproducción, futurología, what-if y certificado.",
-      "Publicar genera link /p/{slug} copiable; despublicar lo invalida.",
+      "/ingresar permite crear cuenta e ingresar; el header refleja la sesión y 'Salir' la cierra.",
+      "/mis-parcelas muestra solo las parcelas del dueño con su estado Privada/Pública; sin sesión redirige a /ingresar y vuelve tras auth.",
+      "'Copiar link' deja la URL /p/{slug} en el portapapeles y la fila pasa a 'Pública'; 'Descompartir' invalida el link.",
+      "/parcela/{id} muestra las 6 secciones solo al dueño; a un tercero lo manda a /p/{slug} si está publicada o a 'no disponible'.",
       "/p/{slug} abre sin login, read-only, con OG preview correcto al pegar el link.",
-      "Con backend caído todo funciona en modo demo con etiqueta de fuente visible.",
+      "Listado público muestra solo dot+nombre+localidad+ha por fila.",
+      "Con backend caído todo funciona en modo demo con etiqueta de fuente visible y auth marcada 'demo'.",
       "En navegador sin WebGPU el diorama cae al fallback sin dejar la página en blanco.",
       "La sección Certificado muestra hash/audit_urls y el CTA de PDF en estado correcto (descarga o 'en generación')."
     ]
