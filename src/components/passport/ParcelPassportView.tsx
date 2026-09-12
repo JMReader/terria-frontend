@@ -159,7 +159,7 @@ export default function ParcelPassportView({
           </section>
 
           <div className="min-h-[420px] flex-1 lg:min-h-0">
-            <PassportDiorama field={field} />
+            <PassportDiorama field={field} timelapse={timelapse} />
           </div>
         </div>
 

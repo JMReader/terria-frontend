@@ -4,6 +4,7 @@ import React, { useState } from "react";
 import dynamic from "next/dynamic";
 import { Move3d } from "lucide-react";
 import { FieldItem } from "@/data/fieldsData";
+import { useFieldTimelapse } from "@/hooks/useFieldTimelapse";
 
 const FieldTerrainGPU = dynamic(
   () => import("@/components/terrain/FieldTerrainGPU"),
@@ -22,9 +23,10 @@ const FieldTerrainGPU = dynamic(
 
 interface PassportDioramaProps {
   field: FieldItem;
+  timelapse?: ReturnType<typeof useFieldTimelapse>;
 }
 
-export default function PassportDiorama({ field }: PassportDioramaProps) {
+export default function PassportDiorama({ field, timelapse }: PassportDioramaProps) {
   const [fallback, setFallback] = useState<string | null>(null);
 
   return (
@@ -41,6 +43,7 @@ export default function PassportDiorama({ field }: PassportDioramaProps) {
         <FieldTerrainGPU
           key={field.id}
           field={field}
+          timelapse={timelapse}
           onFallback={(reason) => setFallback(reason)}
           className="h-full w-full"
         />
