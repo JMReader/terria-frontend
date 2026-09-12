@@ -6,9 +6,10 @@ export function perspective(fovY: number, aspect: number, near: number, far: num
   const m = new Float32Array(16);
   m[0] = f / aspect;
   m[5] = f;
-  m[10] = (far + near) * nf;
+  // WebGPU clip space: z NDC ∈ [0, 1] (no [-1,1] como OpenGL)
+  m[10] = far * nf;
   m[11] = -1;
-  m[14] = 2 * far * near * nf;
+  m[14] = near * far * nf;
   return m;
 }
 

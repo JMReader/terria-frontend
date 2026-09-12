@@ -377,7 +377,8 @@ export default function Planet3D({
 
   return (
     <div className={`relative h-full w-full overflow-hidden ${className}`}>
-      <div ref={mapContainerRef} className="absolute inset-0" />
+      {/* maplibre pisa position:relative sobre absolute → h-full w-full lo cubre */}
+      <div ref={mapContainerRef} className="absolute inset-0 h-full w-full" />
 
       {/* Zoom — lo único que flota */}
       <div className="absolute bottom-6 right-4 z-10 flex flex-col gap-1">

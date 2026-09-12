@@ -65,13 +65,13 @@ struct VOut {
   let wrap = pow(dif * 0.8 + 0.2, 1.15);
 
   var base = f.col.rgb;
-  if (f.elev > -9000.0) {
-    let step = cam.params.y;
-    let dd = abs(fract(f.elev / step + 0.5) - 0.5) * step;
-    let w = max(fwidth(f.elev) * 1.5, 0.0001);
-    let line = 1.0 - smoothstep(0.0, w, dd);
-    base = mix(base, base * 0.6, line * 0.45);
-  }
+  // Curvas de nivel: las derivadas (fwidth) no pueden ir dentro de un if
+  // no-uniforme en WGSL — se calculan siempre y se enmascaran con select().
+  let step = cam.params.y;
+  let dd = abs(fract(f.elev / step + 0.5) - 0.5) * step;
+  let w = max(fwidth(f.elev) * 1.5, 0.0001);
+  let line = (1.0 - smoothstep(0.0, w, dd)) * select(0.0, 1.0, f.elev > -9000.0);
+  base = mix(base, base * 0.6, line * 0.45);
 
   var lit = base * (cam.ambient.rgb + cam.sun.w * wrap * vec3f(1.0, 0.96, 0.88));
   let dist = length(cam.eye.xyz - f.wpos);
@@ -85,7 +85,7 @@ const BLIT_WGSL = /* wgsl */ `
 @group(0) @binding(0) var srcTex: texture_2d<f32>;
 @group(0) @binding(1) var srcSmp: sampler;
 @fragment fn fs_main(@location(0) uv: vec2f) -> @location(0) vec4f {
-  return textureSample(srcTex, srcSmp, uv);
+  return textureSampleLevel(srcTex, srcSmp, uv, 0.0);
 }
 `;
 
@@ -134,6 +134,13 @@ export default function FieldTerrainGPU({
 
         const gpu = await init();
         if (cancelled) return;
+        // Errores async de pipeline (compilación WGSL, validación) → fallback
+        const offError = (gpu as { onError?: (cb: (e: Error) => void) => () => void }).onError?.(
+          (e) => {
+            console.warn("[FieldTerrainGPU] gpu error:", e);
+            fail(e.message || "gpu-pipeline");
+          }
+        );
         const surf = surface(gpu, canvas, { dpr: [1, 2] });
 
         setStatus("dem");
@@ -202,10 +209,21 @@ export default function FieldTerrainGPU({
         });
         const blit = effect(gpu, BLIT_WGSL, {
           set: {
-            srcTex: off.color,
+            srcTex: off,
             srcSmp: sampler(gpu, { magFilter: "linear", minFilter: "linear" }),
           },
         });
+        try {
+          // las surfaces no son compile targets fuera de un frame → compilar por firma
+          const surfFormats = (surf as { colors?: readonly (string | { format: string })[] })
+            .colors;
+          const colors = (surfFormats ?? ["bgra8unorm"]).map((c) =>
+            typeof c === "string" ? c : c.format
+          );
+          await (blit as { compile?: (t: unknown) => Promise<unknown> }).compile?.({ colors });
+        } catch (e) {
+          console.warn("[FieldTerrainGPU] blit compile:", e);
+        }
 
         // ---- orbit state --------------------------------------------------
         const targetY = 1.15;
@@ -300,12 +318,13 @@ export default function FieldTerrainGPU({
             p.draw(terrainDraw);
             p.draw(wallsDraw);
           });
-          frame.pass(surf, blit);
+          frame.pass(surf, (p) => p.draw(blit));
         });
 
         setStatus("ready");
         cleanup = () => {
           loop.stop();
+          offError?.();
           canvas.removeEventListener("pointerdown", onPointerDown);
           canvas.removeEventListener("pointermove", onPointerMove);
           canvas.removeEventListener("pointerup", onPointerUp);
@@ -318,7 +337,8 @@ export default function FieldTerrainGPU({
           }
         };
       } catch (err) {
-        console.warn("[FieldTerrainGPU]", err);
+        const cause = (err as { cause?: { message?: string } })?.cause?.message;
+        console.warn("[FieldTerrainGPU]", err, cause ? `cause: ${cause}` : "");
         fail(err instanceof Error ? err.message : "gpu-error");
       }
     })();
