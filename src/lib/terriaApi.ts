@@ -12,6 +12,8 @@ import {
   FieldWhatIfRequest,
   StandaloneWhatIfRequest,
 } from "@/types/whatIf";
+import { FieldItem, FIELDS_DATA } from "@/data/fieldsData";
+import { OwnerProfile, PublicParcelPayload } from "@/types/passport";
 
 /**
  * Cliente liviano para la API FastAPI de TERRIA + adaptador del contrato
@@ -565,5 +567,217 @@ export async function fetchStandaloneWhatIf(
     }
   );
   return adaptWhatIf(raw);
+}
+
+/* ---------- Pasaporte digital: fields, auth de dueño y compartición ---------- */
+
+export interface ApiFieldResponse {
+  id: string;
+  name: string;
+  description: string | null;
+  boundary: { type: string; coordinates: number[][][] };
+  area_hectares: number;
+  country: string | null;
+  province: string | null;
+  locality: string | null;
+  visibility: "private" | "public";
+  public_slug: string | null;
+  owner_id: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface ApiPublicFieldResponse {
+  id: string;
+  name: string;
+  description: string | null;
+  boundary: { type: string; coordinates: number[][][] };
+  area_hectares: number;
+  country: string | null;
+  province: string | null;
+  locality: string | null;
+  public_slug: string | null;
+  published_at: string;
+}
+
+interface ApiOwnerResponse {
+  id: string;
+  email: string;
+  name: string | null;
+  created_at: string;
+}
+
+interface ApiAuthResponse {
+  token: string;
+  owner: ApiOwnerResponse;
+}
+
+/** fetch con Authorization: Bearer cuando hay token de dueño. */
+export async function authFetch<T>(
+  url: string,
+  token: string | null,
+  init?: RequestInit
+): Promise<T> {
+  const res = await fetch(url, {
+    ...init,
+    headers: {
+      ...(init?.headers ?? {}),
+      ...(token ? { Authorization: `Bearer ${token}` } : {}),
+    },
+  });
+  if (!res.ok) throw new Error(`${init?.method ?? "GET"} ${url} -> ${res.status}`);
+  return (await res.json()) as T;
+}
+
+function centroidOf(boundary?: { coordinates: number[][][] }): { lat: number; lng: number } {
+  const coords = boundary?.coordinates?.[0];
+  if (!coords?.length) return { lat: -33.89, lng: -60.61 };
+  const sumLng = coords.reduce((acc, c) => acc + c[0], 0);
+  const sumLat = coords.reduce((acc, c) => acc + c[1], 0);
+  return {
+    lat: Number((sumLat / coords.length).toFixed(6)),
+    lng: Number((sumLng / coords.length).toFixed(6)),
+  };
+}
+
+/** Backend FieldResponse/PublicFieldResponse → FieldItem del front. */
+export function adaptBackendField(
+  f: ApiFieldResponse | ApiPublicFieldResponse,
+  idx = 0
+): FieldItem {
+  const { lat, lng } = centroidOf(f.boundary);
+  const isPublic = "visibility" in f ? f.visibility === "public" : true;
+  const slug = "public_slug" in f ? f.public_slug : null;
+  return {
+    id: f.id,
+    name: f.name,
+    code: `CAMPO ${String(idx + 1).padStart(2, "0")}`,
+    locality: f.locality || "Pergamino",
+    province: f.province || "Buenos Aires",
+    coordinates: `${Math.abs(lat).toFixed(2)}°S ${Math.abs(lng).toFixed(2)}°W`,
+    lat,
+    lng,
+    hectares: Math.round(f.area_hectares ?? 100),
+    crop: "Maíz Tardío",
+    primaryCrop: "Maíz Tardío",
+    ndvi: 0.79,
+    aptitude: "Alta",
+    suitabilityScore: 94,
+    soilSeries: "Argiudol Típico Serie Pergamino",
+    soilType: "Argiudol Típico Serie Pergamino",
+    rentUsdHa: 220,
+    rentQqSoja: 14.5,
+    waterTable: "Óptima a 2.1m",
+    status: isPublic ? "published" : "destacado",
+    tags: ["Zona Núcleo", "Suelo Clase I-II", "Monitoreo Satelital"],
+    description: f.description ?? undefined,
+    publicSlug: slug ?? undefined,
+    ownerId: "owner_id" in f ? (f.owner_id ?? undefined) : undefined,
+    boundary: f.boundary,
+  };
+}
+
+function adaptOwner(o: ApiOwnerResponse): OwnerProfile {
+  return { id: o.id, email: o.email, name: o.name, createdAt: o.created_at };
+}
+
+export async function registerOwner(req: {
+  email: string;
+  password: string;
+  name?: string;
+}): Promise<{ token: string; owner: OwnerProfile }> {
+  const res = await fetch(`${API_BASE}/v1/auth/register`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ email: req.email, password: req.password, name: req.name ?? null }),
+  });
+  if (res.status === 409) throw new Error("EMAIL_TAKEN");
+  if (!res.ok) throw new Error(`register -> ${res.status}`);
+  const body = (await res.json()) as ApiAuthResponse;
+  return { token: body.token, owner: adaptOwner(body.owner) };
+}
+
+export async function loginOwner(req: {
+  email: string;
+  password: string;
+}): Promise<{ token: string; owner: OwnerProfile }> {
+  const res = await fetch(`${API_BASE}/v1/auth/login`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ email: req.email, password: req.password }),
+  });
+  if (res.status === 401) throw new Error("INVALID_CREDENTIALS");
+  if (!res.ok) throw new Error(`login -> ${res.status}`);
+  const body = (await res.json()) as ApiAuthResponse;
+  return { token: body.token, owner: adaptOwner(body.owner) };
+}
+
+export async function logoutOwner(token: string): Promise<void> {
+  await fetch(`${API_BASE}/v1/auth/logout`, {
+    method: "POST",
+    headers: { Authorization: `Bearer ${token}` },
+  }).catch(() => undefined);
+}
+
+export async function fetchOwnerMe(token: string): Promise<OwnerProfile> {
+  const o = await authFetch<ApiOwnerResponse>(`${API_BASE}/v1/auth/me`, token);
+  return adaptOwner(o);
+}
+
+export async function fetchOwnerFields(token: string): Promise<FieldItem[]> {
+  const raw = await authFetch<ApiFieldResponse[]>(`${API_BASE}/v1/me/fields`, token);
+  return raw.map((f, i) => adaptBackendField(f, i));
+}
+
+export async function listBackendFields(): Promise<FieldItem[]> {
+  const raw = await fetchJson<ApiFieldResponse[]>(`${API_BASE}/v1/fields`);
+  return raw.map((f, i) => adaptBackendField(f, i));
+}
+
+export async function getField(id: string): Promise<FieldItem> {
+  const raw = await fetchJson<ApiFieldResponse>(`${API_BASE}/v1/fields/${id}`);
+  return adaptBackendField(raw);
+}
+
+export async function getPublicField(slug: string): Promise<PublicParcelPayload> {
+  const raw = await fetchJson<ApiPublicFieldResponse>(
+    `${API_BASE}/v1/public/fields/${slug}`
+  );
+  const field = adaptBackendField(raw) as PublicParcelPayload;
+  field.publishedAt = raw.published_at;
+  return field;
+}
+
+export async function publishField(
+  id: string,
+  token: string | null
+): Promise<{ publicSlug: string; publicUrl: string }> {
+  const body = await authFetch<{ public_slug: string; public_url: string }>(
+    `${API_BASE}/v1/fields/${id}/publish`,
+    token,
+    { method: "POST" }
+  );
+  return { publicSlug: body.public_slug, publicUrl: body.public_url };
+}
+
+export async function unpublishField(id: string, token: string | null): Promise<void> {
+  await authFetch(`${API_BASE}/v1/fields/${id}/unpublish`, token, { method: "POST" });
+}
+
+export function fieldCertificatePdfUrl(id: string): string {
+  return `${API_BASE}/v1/fields/${id}/certificate.pdf`;
+}
+
+/** Resolución demo: busca en el mock por id o por slug derivado del nombre. */
+export function findMockField(idOrSlug: string): FieldItem | undefined {
+  const byId = FIELDS_DATA.find((f) => f.id === idOrSlug);
+  if (byId) return byId;
+  return FIELDS_DATA.find(
+    (f) =>
+      f.name
+        .toLowerCase()
+        .replace(/[^a-z0-9]+/g, "-")
+        .replace(/(^-|-$)/g, "") === idOrSlug
+  );
 }
 

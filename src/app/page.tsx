@@ -2,6 +2,7 @@
 
 import React, { useState, useRef, useEffect } from "react";
 import dynamic from "next/dynamic";
+import { useRouter } from "next/navigation";
 import { FIELDS_DATA, FieldItem } from "@/data/fieldsData";
 import FloatingIslandHeader from "@/components/FloatingIslandHeader";
 import FieldCardsList from "@/components/FieldCardsList";
@@ -16,6 +17,8 @@ import gsap from "gsap";
 import { useGSAP } from "@gsap/react";
 import { TimelapseManifest } from "@/types/terria";
 import { normalizeTimelapseManifest } from "@/lib/timelapseNormalizer";
+import { adaptBackendField, ApiFieldResponse } from "@/lib/terriaApi";
+import { useOwnerAuth } from "@/components/auth/OwnerAuthProvider";
 
 gsap.registerPlugin(useGSAP);
 
@@ -70,48 +73,9 @@ export default function Home() {
         if (fieldsRes.ok) {
           const fieldsData = await fieldsRes.json();
           if (Array.isArray(fieldsData) && fieldsData.length > 0) {
-            const mapped: FieldItem[] = fieldsData.map((f: any, idx: number) => {
-              let lat = f.centroid_lat;
-              let lng = f.centroid_lng;
-              if (lat == null || lng == null) {
-                if (f.boundary?.coordinates?.[0]?.length > 0) {
-                  const coords = f.boundary.coordinates[0];
-                  const sumLng = coords.reduce((acc: number, c: number[]) => acc + c[0], 0);
-                  const sumLat = coords.reduce((acc: number, c: number[]) => acc + c[1], 0);
-                  lng = Number((sumLng / coords.length).toFixed(6));
-                  lat = Number((sumLat / coords.length).toFixed(6));
-                } else {
-                  lat = FIELDS_DATA[idx % FIELDS_DATA.length]?.lat ?? -33.89;
-                  lng = FIELDS_DATA[idx % FIELDS_DATA.length]?.lng ?? -60.61;
-                }
-              }
-
-              return {
-                id: f.id,
-                name: f.name,
-                code: `CAMPO ${String(idx + 1).padStart(2, "0")}`,
-                locality: f.locality || "Pergamino",
-                province: f.province || "Buenos Aires",
-                coordinates: `${Math.abs(lat).toFixed(2)}°S ${Math.abs(lng).toFixed(2)}°W`,
-                lat,
-                lng,
-                hectares: f.area_hectares ?? 100,
-                crop: f.primary_crop ?? "Maíz Tardío",
-                primaryCrop: f.primary_crop ?? "Maíz Tardío",
-                ndvi: 0.79,
-                aptitude: "Alta",
-                suitabilityScore: 94,
-                soilSeries: "Argiudol Típico Serie Pergamino",
-                soilType: "Argiudol Típico Serie Pergamino",
-                rentUsdHa: 220,
-                rentQqSoja: 14.5,
-                waterTable: "Óptima a 2.1m",
-                status: f.is_published ? "published" : "destacado",
-                tags: ["Zona Núcleo", "Suelo Clase I-II", "Monitoreo Satelital"],
-                publicSlug: f.public_slug,
-                boundary: f.boundary,
-              };
-            });
+            const mapped: FieldItem[] = fieldsData.map((f: ApiFieldResponse, idx: number) =>
+              adaptBackendField(f, idx)
+            );
             // Solo los campos que existen en la BD — sin mezclar el catálogo mock
             setBackendFields(mapped);
             setSelectedField((prev) =>
@@ -123,7 +87,7 @@ export default function Home() {
             if (tlRes.ok) {
               const datasets = await tlRes.json();
               const readyDataset = datasets.find(
-                (d: any) => d.status === "ready" || d.status === "partial"
+                (d: { status: string }) => d.status === "ready" || d.status === "partial"
               );
               if (readyDataset) {
                 const manifestRes = await fetch(
@@ -147,6 +111,18 @@ export default function Home() {
 
   // Synchronized timelapse engine shared by map parcels + detail panel
   const timelapse = useFieldTimelapse({ manifest: timelapseManifest });
+  const router = useRouter();
+  const { owner } = useOwnerAuth();
+
+  // El pasaporte completo vive en su ruta: público si está compartido, dueño si no.
+  const handleOpenPassport = (field: FieldItem) => {
+    if (field.publicSlug) {
+      router.push(`/p/${field.publicSlug}`);
+      return;
+    }
+    const passportPath = `/parcela/${field.id}`;
+    router.push(owner ? passportPath : `/ingresar?next=${encodeURIComponent(passportPath)}`);
+  };
 
   const pageContainerRef = useRef<HTMLDivElement>(null);
   const mapViewportRef = useRef<HTMLDivElement>(null);
@@ -189,7 +165,7 @@ export default function Home() {
       if (tlRes.ok) {
         const datasets = await tlRes.json();
         const readyDataset = datasets.find(
-          (d: any) => d.status === "ready" || d.status === "partial"
+          (d: { status: string }) => d.status === "ready" || d.status === "partial"
         );
         if (readyDataset) {
           const manifestRes = await fetch(
@@ -311,6 +287,7 @@ export default function Home() {
                 field={selectedField}
                 onBack={handleBackToCatalog}
                 onExpandData={() => setDataSheetOpen(true)}
+                onOpenPassport={() => handleOpenPassport(selectedField)}
                 sharedTimelapse={timelapse}
               />
             ) : (

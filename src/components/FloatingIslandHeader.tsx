@@ -5,6 +5,7 @@ import { Search, X, Command } from "lucide-react";
 import gsap from "gsap";
 import { useGSAP } from "@gsap/react";
 import BrandMark from "@/components/brand/BrandMark";
+import SessionStatus from "@/components/auth/SessionStatus";
 
 gsap.registerPlugin(useGSAP);
 
@@ -111,6 +112,11 @@ export default function FloatingIslandHeader({
                 )}
 
               </div>
+            </div>
+
+            {/* Right: session state */}
+            <div className="flex shrink-0 items-center">
+              <SessionStatus />
             </div>
           </div>
         </div>

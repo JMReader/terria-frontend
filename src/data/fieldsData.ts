@@ -28,6 +28,7 @@ export interface FieldItem {
   soilType?: string;     // alias for soilSeries from backend
   aptitude?: string;     // soil aptitude label
   publicSlug?: string;   // TERRIA public URL slug
+  ownerId?: string;      // dueño de la parcela (backend owner_id)
   boundary?: {           // Real GeoJSON polygon boundary from backend
     type: string;
     coordinates: number[][][];

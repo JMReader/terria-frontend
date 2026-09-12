@@ -13,6 +13,7 @@ interface FieldCardProps {
 const ndviDot = (v: number) =>
   v > 0.6 ? "#4a6b46" : v > 0.4 ? "#8a9a6b" : "#c9b28a";
 
+/** Índice mínimo del catálogo: dot NDVI + nombre + localidad + hectáreas. */
 export default function FieldCard({ field, isSelected, onSelect }: FieldCardProps) {
   return (
     <button
@@ -30,16 +31,11 @@ export default function FieldCard({ field, isSelected, onSelect }: FieldCardProp
           {field.name}
         </span>
         <span className="block truncate text-[11px] text-piedra">
-          {field.locality || "Argentina"} · {field.primaryCrop || field.crop || "Campo"}
+          {field.locality || "Argentina"}
         </span>
       </span>
-      <span className="shrink-0 text-right">
-        <span className="block text-sm font-bold text-bosque tabular-nums">
-          {field.hectares} ha
-        </span>
-        <span className="block text-[10px] font-mono text-piedra tabular-nums">
-          NDVI {field.ndvi.toFixed(2)}
-        </span>
+      <span className="shrink-0 text-sm font-bold text-bosque tabular-nums">
+        {field.hectares} ha
       </span>
       <ChevronRight
         className={`h-4 w-4 shrink-0 transition-all ${
