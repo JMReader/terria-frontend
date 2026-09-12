@@ -236,5 +236,16 @@ export function computeDemoWhatIf(
       "SoilGrids 250m": "https://rest.isric.org/soilgrids/v2.0/docs",
       "SAGyP Estimaciones": "https://datos.magyp.gob.ar/dataset/estimaciones-agricolas",
     },
+    frozenInputs: {
+      environmental_vector_5d: {
+        soil_clay_pct: 26.6,
+        soil_sand_pct: 9.9,
+        mean_slope_deg: 0.40,
+        elevation_dem_m: 60.0,
+        radar_backscatter_db: -17.40,
+        water_balance_mm: isDrought ? -670.0 : -320.0,
+        historical_ndvi_max: 0.426,
+      },
+    },
   };
 }

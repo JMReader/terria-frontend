@@ -146,6 +146,46 @@ export default function WhatIfHeroCard({
         </div>
       </div>
 
+      {/* Desglose Económico y Financiero por Hectárea */}
+      <div className="mt-4 rounded-2xl border border-piedra-soft bg-nube/80 p-3.5 sm:p-4">
+        <div className="flex items-center justify-between border-b border-piedra-soft pb-2 mb-2.5">
+          <span className="text-[10px] font-mono font-bold tracking-wider text-piedra uppercase">
+            Desglose Económico y Financiero por Hectárea ({bestMarginCrop.cropName})
+          </span>
+          <span className="text-[10px] font-mono text-piedra">
+            Ecuación BCR / MATba
+          </span>
+        </div>
+
+        <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 text-xs font-mono">
+          <div className="rounded-xl bg-papel p-2.5 border border-piedra-soft">
+            <span className="text-[9px] text-piedra uppercase font-bold block mb-0.5">Ingreso Bruto</span>
+            <span className="font-bold text-bosque">${fmtUsd(bestMarginCrop.financials.grossIncomeUsdHa)}</span>
+            <span className="text-[9px] text-piedra block mt-0.5">USD/ha</span>
+          </div>
+
+          <div className="rounded-xl bg-papel p-2.5 border border-piedra-soft">
+            <span className="text-[9px] text-piedra uppercase font-bold block mb-0.5">Costos Directos</span>
+            <span className="font-bold text-tierra-deep">${fmtUsd(bestMarginCrop.financials.costsUsdHa)}</span>
+            <span className="text-[9px] text-piedra block mt-0.5">BCR labores/insumos</span>
+          </div>
+
+          <div className="rounded-xl bg-papel p-2.5 border border-piedra-soft">
+            <span className="text-[9px] text-piedra uppercase font-bold block mb-0.5">Margen Neto</span>
+            <span className="font-bold text-musgo">${fmtUsd(bestMarginCrop.financials.netMarginUsdHa)}</span>
+            <span className="text-[9px] text-piedra block mt-0.5">USD/ha</span>
+          </div>
+
+          <div className="rounded-xl bg-papel p-2.5 border border-piedra-soft">
+            <span className="text-[9px] text-piedra uppercase font-bold block mb-0.5">vs Siembra Real</span>
+            <span className={`font-bold ${bestMarginCrop.financials.diffNetMarginUsdHa >= 0 ? "text-musgo" : "text-tierra-deep"}`}>
+              {bestMarginCrop.financials.diffNetMarginUsdHa >= 0 ? "+" : ""}${fmtUsd(bestMarginCrop.financials.diffNetMarginUsdHa)}
+            </span>
+            <span className="text-[9px] text-piedra block mt-0.5">USD/ha vs {realCrop}</span>
+          </div>
+        </div>
+      </div>
+
       {/* Conclusión / Recomendación Dinámica */}
       {results?.recommendation && (
         <div className="mt-4 rounded-xl bg-nube border border-piedra-soft p-3 text-xs font-mono text-bosque/80 leading-relaxed">
