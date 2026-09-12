@@ -56,7 +56,7 @@ function Row({
         <span className="block truncate text-sm font-semibold text-bosque">
           {field.name}
         </span>
-        <span className="block truncate text-[11px] text-piedra">
+        <span className="block truncate text-[11px] text-piedra tabular-nums">
           {field.locality || "Argentina"}
           {field.province ? `, ${field.province}` : ""} · {field.hectares} ha
         </span>
@@ -74,6 +74,7 @@ function Row({
 
       <div className="flex shrink-0 items-center gap-1">
         <button
+          type="button"
           onClick={() => onOpen(field)}
           className="flex items-center gap-1 rounded-full px-3 py-1.5 text-[11px] font-mono font-bold uppercase tracking-wider text-bosque/70 transition-colors hover:bg-nube hover:text-bosque cursor-pointer"
         >
@@ -81,6 +82,7 @@ function Row({
           <ArrowUpRight className="h-3.5 w-3.5" />
         </button>
         <button
+          type="button"
           onClick={copy}
           disabled={busy !== null}
           className="flex items-center gap-1 rounded-full bg-musgo/10 border border-musgo/25 px-3 py-1.5 text-[11px] font-mono font-bold uppercase tracking-wider text-musgo transition-colors hover:bg-musgo/20 disabled:opacity-60 cursor-pointer"
@@ -96,8 +98,10 @@ function Row({
         </button>
         {isPublished && (
           <button
+            type="button"
             onClick={unshare}
             disabled={busy !== null}
+            aria-label="Descompartir — el link público deja de funcionar"
             title="Descompartir — el link público deja de funcionar"
             className="flex items-center gap-1 rounded-full px-2.5 py-1.5 text-[11px] font-mono font-bold uppercase tracking-wider text-piedra transition-colors hover:bg-nube hover:text-bosque disabled:opacity-60 cursor-pointer"
           >

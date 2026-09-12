@@ -17,6 +17,7 @@ const ndviDot = (v: number) =>
 export default function FieldCard({ field, isSelected, onSelect }: FieldCardProps) {
   return (
     <button
+      type="button"
       onClick={() => onSelect(field)}
       className={`field-card-item group flex w-full items-center gap-3 px-4 py-3 text-left transition-colors select-none cursor-pointer ${
         isSelected ? "bg-musgo/10" : "hover:bg-nube/70"
@@ -25,6 +26,8 @@ export default function FieldCard({ field, isSelected, onSelect }: FieldCardProp
       <span
         className="h-2.5 w-2.5 shrink-0 rounded-full"
         style={{ backgroundColor: ndviDot(field.ndvi) }}
+        title={`NDVI ${field.ndvi.toFixed(2)}`}
+        aria-hidden="true"
       />
       <span className="min-w-0 flex-1">
         <span className="block truncate text-sm font-semibold text-bosque">

@@ -7,7 +7,6 @@ import { FIELDS_DATA, FieldItem } from "@/data/fieldsData";
 import FloatingIslandHeader from "@/components/FloatingIslandHeader";
 import FieldCardsList from "@/components/FieldCardsList";
 import FieldDetailView from "@/components/FieldDetailView";
-import FieldExpandedSheet from "@/components/FieldExpandedSheet";
 import Hero from "@/components/landing/Hero";
 import SiteFooter from "@/components/landing/SiteFooter";
 import { useFieldTimelapse } from "@/hooks/useFieldTimelapse";
@@ -58,7 +57,6 @@ export default function Home() {
   const [searchQuery, setSearchQuery] = useState("");
   const [backendFields, setBackendFields] = useState<FieldItem[]>(FIELDS_DATA);
   const [timelapseManifest, setTimelapseManifest] = useState<TimelapseManifest>(DEMO_TIMELAPSE_MANIFEST);
-  const [dataSheetOpen, setDataSheetOpen] = useState(false);
   const [terrainFallback, setTerrainFallback] = useState<string | null>(null);
   const [terrainReveal, setTerrainReveal] = useState(false);
 
@@ -184,7 +182,6 @@ export default function Home() {
 
   const handleBackToCatalog = () => {
     setIsFieldExpanded(false);
-    setDataSheetOpen(false);
     setTerrainReveal(false);
     if (mapViewportRef.current) {
       gsap.fromTo(
@@ -286,9 +283,7 @@ export default function Home() {
               <FieldDetailView
                 field={selectedField}
                 onBack={handleBackToCatalog}
-                onExpandData={() => setDataSheetOpen(true)}
                 onOpenPassport={() => handleOpenPassport(selectedField)}
-                sharedTimelapse={timelapse}
               />
             ) : (
               <FieldCardsList
@@ -302,13 +297,6 @@ export default function Home() {
           </div>
         </main>
       </section>
-
-      {/* Sheet ampliada: Datos / Futuro / Solana */}
-      <FieldExpandedSheet
-        field={selectedField}
-        open={dataSheetOpen && isFieldExpanded}
-        onClose={() => setDataSheetOpen(false)}
-      />
 
       <SiteFooter />
     </div>

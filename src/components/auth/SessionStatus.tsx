@@ -38,6 +38,7 @@ export default function SessionStatus() {
         Mis parcelas
       </Link>
       <button
+        type="button"
         onClick={() => {
           logout();
           router.push("/");

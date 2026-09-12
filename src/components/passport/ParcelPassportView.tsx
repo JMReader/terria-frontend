@@ -123,7 +123,7 @@ export default function ParcelPassportView({
                   Verificado
                 </span>
               </div>
-              <p className="mt-1 text-xs font-mono text-piedra">
+              <p className="mt-1 text-xs font-mono text-piedra tabular-nums">
                 {field.locality || "Argentina"}
                 {field.province ? `, ${field.province}` : ""}
                 {field.coordinates ? ` · ${field.coordinates}` : ""} · {field.hectares} ha

@@ -13,7 +13,7 @@ interface AuthViewProps {
 type Mode = "login" | "register";
 
 const inputCls =
-  "w-full rounded-xl border border-piedra-soft bg-nube px-3.5 py-2.5 text-sm text-bosque placeholder:text-piedra focus:border-musgo focus:outline-none transition-colors";
+  "w-full rounded-xl border border-piedra-soft bg-nube px-3.5 py-2.5 text-sm text-bosque placeholder:text-piedra focus:border-musgo focus:outline-none focus-visible:ring-2 focus-visible:ring-musgo/30 transition-colors";
 
 export default function AuthView({ next }: AuthViewProps) {
   const { status, login, register } = useOwnerAuth();
@@ -91,6 +91,7 @@ export default function AuthView({ next }: AuthViewProps) {
                 placeholder="Nombre (opcional)"
                 className={inputCls}
                 autoComplete="name"
+                aria-label="Nombre"
               />
             )}
             <input
@@ -101,6 +102,7 @@ export default function AuthView({ next }: AuthViewProps) {
               placeholder="Email"
               className={inputCls}
               autoComplete="email"
+              aria-label="Email"
             />
             <input
               type="password"
@@ -111,6 +113,7 @@ export default function AuthView({ next }: AuthViewProps) {
               placeholder="Contraseña (mín. 8)"
               className={inputCls}
               autoComplete={mode === "login" ? "current-password" : "new-password"}
+              aria-label="Contraseña"
             />
 
             {error && (

@@ -11,9 +11,7 @@ gsap.registerPlugin(useGSAP);
 export interface FieldDetailViewProps {
   field: FieldItem;
   onBack: () => void;
-  onExpandData?: () => void;
   onOpenPassport?: () => void;
-  sharedTimelapse?: unknown;
 }
 
 const DefRow = ({ label, children }: { label: string; children: React.ReactNode }) => (
@@ -65,6 +63,7 @@ export default function FieldDetailView({
       <div className="shrink-0 border-b border-piedra-soft p-4 sm:p-5 space-y-2.5">
         <div className="flex items-center justify-between gap-2">
           <button
+            type="button"
             onClick={handleBackClick}
             className="text-xs font-mono font-bold text-bosque/70 hover:text-bosque transition-colors cursor-pointer"
           >
@@ -117,6 +116,7 @@ export default function FieldDetailView({
       {onOpenPassport && (
         <div className="shrink-0 border-t border-piedra-soft p-4 sm:p-5">
           <button
+            type="button"
             onClick={onOpenPassport}
             className="flex w-full items-center justify-between rounded-2xl bg-bosque px-4 py-3 text-sm font-semibold text-nube transition-colors hover:bg-bosque-deep cursor-pointer"
           >

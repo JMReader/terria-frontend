@@ -54,6 +54,7 @@ export default function SharePanel({ shareState, onCopyLink, onUnshare }: ShareP
       )}
 
       <button
+        type="button"
         onClick={copy}
         disabled={busy !== null}
         className="flex items-center gap-1.5 rounded-full bg-musgo/10 border border-musgo/25 px-3 py-1.5 text-[11px] font-mono font-bold uppercase tracking-wider text-musgo transition-colors hover:bg-musgo/20 disabled:opacity-60 cursor-pointer"
@@ -70,8 +71,10 @@ export default function SharePanel({ shareState, onCopyLink, onUnshare }: ShareP
 
       {isPublished && (
         <button
+          type="button"
           onClick={unshare}
           disabled={busy !== null}
+          aria-label="Descompartir — el link público deja de funcionar"
           title="Descompartir — el link público deja de funcionar"
           className="flex items-center gap-1 rounded-full px-2.5 py-1.5 text-[11px] font-mono font-bold uppercase tracking-wider text-piedra transition-colors hover:bg-nube hover:text-bosque disabled:opacity-60 cursor-pointer"
         >
