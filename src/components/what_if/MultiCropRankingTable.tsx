@@ -83,13 +83,13 @@ export default function MultiCropRankingTable({
             <div
               key={item.cropId}
               onClick={() => onSelectCrop(item.cropId)}
-              className={`py-2.5 px-2 rounded-xl transition-all cursor-pointer flex items-center justify-between gap-2 ${
+              className={`py-2.5 px-2.5 rounded-xl transition-all cursor-pointer flex items-center justify-between gap-2 sm:gap-4 ${
                 isSelected
-                  ? "bg-nube border border-bosque/30"
+                  ? "bg-nube border border-bosque/30 shadow-xs"
                   : "hover:bg-nube/60"
               }`}
             >
-              {/* Posición y Nombre del Cultivo */}
+              {/* Posición y Nombre del Cultivo (sin categoría) */}
               <div className="flex items-center gap-2.5 min-w-0">
                 <span
                   className={`h-6 w-6 rounded-lg flex items-center justify-center text-[10px] font-mono font-bold shrink-0 ${
@@ -115,25 +115,40 @@ export default function MultiCropRankingTable({
                   <span className="text-[10px] font-mono text-piedra block">
                     {item.projectedYieldTnHa} tn/ha{" "}
                     <span className={item.deltaYieldPct >= 0 ? "text-musgo font-bold" : "text-tierra-deep"}>
-                      ({item.deltaYieldPct >= 0 ? `+${item.deltaYieldPct}%` : `${item.deltaYieldPct}%`})
+                      ({item.deltaYieldPct >= 0 ? `+${item.deltaYieldPct}%` : `${item.deltaYieldPct}%`} vs {item.benchmarkDeptYieldTnHa} SAGyP)
                     </span>
                   </span>
                 </div>
               </div>
 
-              {/* Margen y Delta vs Real */}
-              <div className="text-right shrink-0">
-                <span className="font-bold text-xs text-bosque font-mono block">
-                  ${fmtUsd(item.financials.netMarginUsdHa)}{" "}
-                  <span className="text-[9px] font-normal text-piedra">USD/ha</span>
-                </span>
-                <span
-                  className={`text-[10px] font-mono font-bold block ${
-                    isPositive ? "text-musgo" : "text-tierra-deep"
-                  }`}
-                >
-                  {isPositive ? `+${fmtUsd(item.financials.diffNetMarginUsdHa)}` : fmtUsd(item.financials.diffNetMarginUsdHa)} USD/ha
-                </span>
+              {/* Margen por ha e Impacto Total en el Lote */}
+              <div className="flex items-center gap-3 sm:gap-4 text-right shrink-0">
+                <div>
+                  <span className="font-bold text-xs text-bosque font-mono block">
+                    ${fmtUsd(item.financials.netMarginUsdHa)}{" "}
+                    <span className="text-[9px] font-normal text-piedra">USD/ha</span>
+                  </span>
+                  <span
+                    className={`text-[10px] font-mono font-bold block ${
+                      isPositive ? "text-musgo" : "text-tierra-deep"
+                    }`}
+                  >
+                    {isPositive ? `+${fmtUsd(item.financials.diffNetMarginUsdHa)}` : fmtUsd(item.financials.diffNetMarginUsdHa)} USD/ha
+                  </span>
+                </div>
+
+                <div className="pl-3 border-l border-piedra-soft/80 min-w-[85px] sm:min-w-[105px] text-right">
+                  <span className="text-[9px] font-mono text-piedra uppercase block">
+                    Total Lote
+                  </span>
+                  <span
+                    className={`text-xs font-mono font-bold block ${
+                      item.financials.totalLotDiffUsd >= 0 ? "text-musgo" : "text-tierra-deep"
+                    }`}
+                  >
+                    {item.financials.totalLotDiffUsd >= 0 ? "+" : ""}${fmtUsd(item.financials.totalLotDiffUsd)} USD
+                  </span>
+                </div>
               </div>
             </div>
           );
