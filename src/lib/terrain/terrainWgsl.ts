@@ -135,11 +135,13 @@ fn rainMask(uv: vec2f, t: f32) -> f32 {
       if (env.sat.w > 0.5 && inAsset) {
         let wx = select(auv.x, 1.0 - auv.x, env.sat.y > 0.5);
         let wipe = step(wx, env.sat.x);
-        let satCol = mix(
+        var satCol = mix(
           textureSampleLevel(texPrev, satSmp, auv, 0.0),
           textureSampleLevel(texCur, satSmp, auv, 0.0),
           wipe
         ).rgb;
+        // la nubosidad de la captura atenúa el drape
+        satCol = satCol * (1.0 - clamp(env.met.w, 0.0, 1.0) * 0.2);
         base = mix(base, satCol, env.sat.z);
       }
     }
@@ -158,10 +160,15 @@ fn rainMask(uv: vec2f, t: f32) -> f32 {
 
   var lit = base * (cam.ambient.rgb + cam.sun.w * wrap * vec3f(1.0, 0.96, 0.88));
 
-  // lluvia sobre el campo en vista humedad
-  if (mode == 3 && inField && env.met.x > 0.02) {
-    let rain = rainMask(f.satUv, cam.params.z) * env.met.x;
-    lit = mix(lit, vec3f(0.72, 0.80, 0.84), rain * 0.45);
+  // lluvia + brillo húmedo sobre el campo en vista humedad
+  if (mode == 3 && inField) {
+    if (env.met.x > 0.02) {
+      let rain = rainMask(f.satUv, cam.params.z) * env.met.x;
+      lit = mix(lit, vec3f(0.72, 0.80, 0.84), rain * 0.45);
+    }
+    let viewDir = normalize(cam.eye.xyz - f.wpos);
+    let spec = pow(max(dot(reflect(-sunDir, n), viewDir), 0.0), 24.0);
+    lit += vec3f(spec * env.met.x * 0.22);
   }
 
   let dist = length(cam.eye.xyz - f.wpos);

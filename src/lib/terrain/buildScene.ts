@@ -67,39 +67,6 @@ const niceStep = (raw: number) => {
   return step * mag;
 };
 
-/** Distancia Haversine en metros entre dos puntos lng/lat. */
-const haversineM = (lng1: number, lat1: number, lng2: number, lat2: number) => {
-  const R = 6371000;
-  const r = Math.PI / 180;
-  const dLat = (lat2 - lat1) * r;
-  const dLng = (lng2 - lng1) * r;
-  const a =
-    Math.sin(dLat / 2) ** 2 +
-    Math.cos(lat1 * r) * Math.cos(lat2 * r) * Math.sin(dLng / 2) ** 2;
-  return 2 * R * Math.asin(Math.min(1, Math.sqrt(a)));
-};
-
-/**
- * Reduce un anillo a ≤maxSeg aristas conservando las más largas.
- * Los polígonos catastrales reales tienen decenas de vértices — etiquetar
- * cada arista sería ruido; se eligen las más significativas.
- */
-function decimateRing(ring: number[][], maxSeg = 7): number[][] {
-  const pts = ring.slice(0, -1); // drop closing dup
-  if (pts.length <= maxSeg) return pts;
-  const scored = pts.map((p, i) => ({
-    p,
-    len: haversineM(p[0], p[1], pts[(i + 1) % pts.length][0], pts[(i + 1) % pts.length][1]),
-  }));
-  const keep = new Set(
-    [...scored]
-      .sort((a, b) => b.len - a.len)
-      .slice(0, maxSeg)
-      .map((s) => pts.indexOf(s.p))
-  );
-  return pts.filter((_, i) => keep.has(i));
-}
-
 export interface MeshBuffers {
   positions: Float32Array;
   normals: Float32Array;
@@ -110,14 +77,6 @@ export interface MeshBuffers {
   /** uv normalizado dentro del bbox del perímetro (para drapear tiles Sentinel-2) */
   satUv: Float32Array;
   indices: Uint32Array;
-}
-
-/** Arista del perímetro con su longitud real — para cotas HTML proyectadas. */
-export interface TerrainSegment {
-  a: [number, number]; // world xz
-  b: [number, number];
-  mid: [number, number, number]; // world xyz (y = cota del terreno)
-  meters: number;
 }
 
 export interface TerrainScene {
@@ -136,8 +95,6 @@ export interface TerrainScene {
   lotIds: string[];
   /** colores iniciales por lote (index 0 = interior genérico) */
   lotColors: [number, number, number][];
-  /** aristas decimadas del perímetro con longitud Haversine */
-  segments: TerrainSegment[];
 }
 
 export function fieldPerimeterRing(field: FieldItem): number[][] {
@@ -411,26 +368,6 @@ export function buildTerrainScene(
   emitWall(ring, 0.62, hexRgb("#12271e"), 0.96);
   for (const lot of lotRings) emitWall(lot.ring, 0.34, hexRgb("#1c3a2e"), 0.82);
 
-  // ---- cotas: aristas decimadas del perímetro con metros reales -------------
-  const decimated = decimateRing(ring, 7);
-  const segments: TerrainSegment[] = [];
-  for (let i = 0; i < decimated.length; i++) {
-    const a = decimated[i];
-    const b = decimated[(i + 1) % decimated.length];
-    const meters = haversineM(a[0], a[1], b[0], b[1]);
-    if (meters < 8) continue; // aristas triviales no se rotulan
-    const [ax, az] = toWorld(a[0], a[1]);
-    const [bx, bz] = toWorld(b[0], b[1]);
-    const midLng = (a[0] + b[0]) / 2;
-    const midLat = (a[1] + b[1]) / 2;
-    segments.push({
-      a: [ax, az],
-      b: [bx, bz],
-      mid: [(ax + bx) / 2, yOf(hm.sample(midLng, midLat)) + 0.4, (az + bz) / 2],
-      meters,
-    });
-  }
-
   return {
     terrain: {
       positions: tPos,
@@ -460,6 +397,5 @@ export function buildTerrainScene(
     fieldBBox: fBBox,
     lotIds: lotRings.map((l) => l.id),
     lotColors: [hexRgb("#5c7a4a"), ...lotRings.map((l) => l.color)],
-    segments,
   };
 }

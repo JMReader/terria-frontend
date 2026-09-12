@@ -29,8 +29,6 @@ import { buildTerrainScene, computeRegion } from "@/lib/terrain/buildScene";
 import { perspective, lookAt, multiply } from "@/lib/terrain/mat4";
 import { TERRAIN_WGSL, BLIT_WGSL, MAX_LOTS } from "@/lib/terrain/terrainWgsl";
 import { generateParcelsGeoJson } from "@/data/backendParcelsGeoJson";
-import AnalyticalViewSelector, { type TerrainViewMode } from "./AnalyticalViewSelector";
-import AtmosphericTelemetryOverlay from "./AtmosphericTelemetryOverlay";
 
 type Timelapse = ReturnType<typeof useFieldTimelapse>;
 
@@ -43,25 +41,11 @@ const hexRgb = (hex: string): [number, number, number] => {
   return [((v >> 16) & 255) / 255, ((v >> 8) & 255) / 255, (v & 255) / 255];
 };
 
-/** modos analíticos ↔ layer del timelapse compartido */
-const LAYER_TO_MODE: Record<string, TerrainViewMode> = {
-  rgb: "rgb",
-  ndvi: "ndvi",
-  weather: "moisture",
-};
-const MODE_TO_LAYER: Record<TerrainViewMode, "rgb" | "ndvi" | "weather"> = {
-  ndvi: "ndvi",
-  rgb: "rgb",
-  thermal: "weather",
-  moisture: "weather",
-  topography: "ndvi",
-};
-const MODE_INDEX: Record<TerrainViewMode, number> = {
+/** activeLayer del timelapse → modo de shader (cam.params.w) */
+const LAYER_TO_MODE: Record<string, number> = {
   ndvi: 0,
   rgb: 1,
-  thermal: 2,
-  moisture: 3,
-  topography: 4,
+  weather: 3, // humedad: saturación + lluvia procedural
 };
 
 export interface FieldTerrainGPUProps {
@@ -76,14 +60,6 @@ type Status = "loading" | "dem" | "build" | "ready" | "failed";
 /** Textura vgpu bindable (Texture de vgpu/core). */
 type SatTexture = { gpu: GPUTexture; createView(): GPUTextureView; destroy(): void };
 
-interface CotaChip {
-  key: string;
-  x: number; // % del ancho
-  y: number; // % del alto
-  label: string;
-  behind: boolean;
-}
-
 export default function FieldTerrainGPU({
   field,
   timelapse,
@@ -92,34 +68,14 @@ export default function FieldTerrainGPU({
 }: FieldTerrainGPUProps) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const [status, setStatus] = useState<Status>("loading");
-  const [cotas, setCotas] = useState<CotaChip[]>([]);
-  const [mode, setMode] = useState<TerrainViewMode>(
-    LAYER_TO_MODE[timelapse?.activeLayer ?? "ndvi"] ?? "ndvi"
-  );
   const failedRef = useRef(false);
   const onFallbackRef = useRef(onFallback);
   const tlRef = useRef(timelapse);
-  const modeRef = useRef(mode);
-  const [lastLayer, setLastLayer] = useState(timelapse?.activeLayer);
-
-  // el controller del timelapse manda la vista por defecto del terreno
-  // (patrón "adjust state during render" — sin efecto extra)
-  const layer = timelapse?.activeLayer;
-  if (layer !== lastLayer) {
-    setLastLayer(layer);
-    if (layer) setMode(LAYER_TO_MODE[layer] ?? "ndvi");
-  }
 
   useEffect(() => {
     onFallbackRef.current = onFallback;
     tlRef.current = timelapse;
-    modeRef.current = mode;
   });
-
-  const handleModeChange = (m: TerrainViewMode) => {
-    setMode(m);
-    timelapse?.setActiveLayer?.(MODE_TO_LAYER[m]);
-  };
 
   useEffect(() => {
     const canvas = canvasRef.current;
@@ -442,8 +398,6 @@ export default function FieldTerrainGPU({
 
         // envío animado: valores actuales que interpolan hacia target*
         const cur = { satMix: 0, has: 0, precip: 0, temp: 21, ndvi: 0.5, cloud: 0 };
-        let cotaTimer = 0;
-        const lastChips: CotaChip[] = [];
 
         const fov = (32 * Math.PI) / 180;
         const loop = frameLoop(gpu, (frame) => {
@@ -460,7 +414,7 @@ export default function FieldTerrainGPU({
           // ---- timelapse sync ------------------------------------------
           const tl = tlRef.current;
           const ts = tl?.timelineState;
-          const m = MODE_INDEX[modeRef.current] ?? 0;
+          const m = LAYER_TO_MODE[tl?.activeLayer ?? "ndvi"] ?? 0;
 
           // colores de lote por fecha (una vez por cambio de estado)
           const colorKey = `${ts?.selectedDate ?? ""}|${ts?.satellite?.id ?? ""}`;
@@ -527,43 +481,6 @@ export default function FieldTerrainGPU({
           );
           cam.set({ mvp, eye: new Float32Array([eye[0], eye[1], eye[2], 0]) });
 
-          // cotas del perímetro → chips HTML (≈10 Hz)
-          cotaTimer += 1;
-          if (cotaTimer >= 6 && scene.segments.length > 0) {
-            cotaTimer = 0;
-            const chips: CotaChip[] = [];
-            scene.segments.forEach((seg, i) => {
-              const [x, y, z] = seg.mid;
-              const cy = y * relief;
-              const cx = mvp[0] * x + mvp[4] * cy + mvp[8] * z + mvp[12];
-              const cyy = mvp[1] * x + mvp[5] * cy + mvp[9] * z + mvp[13];
-              const cz = mvp[2] * x + mvp[6] * cy + mvp[10] * z + mvp[14];
-              const cw = mvp[3] * x + mvp[7] * cy + mvp[11] * z + mvp[15];
-              if (cw <= 0.01) return;
-              const nx = cx / cw;
-              const ny = cyy / cw;
-              if (nx < -1 || nx > 1 || ny < -1 || ny > 1) return;
-              const label =
-                seg.meters >= 1000
-                  ? `${(seg.meters / 1000).toFixed(2)} km`
-                  : `${Math.round(seg.meters)} m`;
-              chips.push({
-                key: `c${i}`,
-                x: ((nx + 1) / 2) * 100,
-                y: ((1 - ny) / 2) * 100,
-                label,
-                behind: cz / cw > 0.92,
-              });
-            });
-            const sig = chips.map((c) => `${c.x.toFixed(1)},${c.y.toFixed(1)}`).join(";");
-            const prevSig = lastChips.map((c) => `${c.x.toFixed(1)},${c.y.toFixed(1)}`).join(";");
-            if (sig !== prevSig || chips.length !== lastChips.length) {
-              lastChips.length = 0;
-              lastChips.push(...chips);
-              setCotas(chips);
-            }
-          }
-
           const [w, h] = surf.size;
           if (off.size[0] !== w || off.size[1] !== h) off.resize([w, h]);
 
@@ -604,8 +521,6 @@ export default function FieldTerrainGPU({
     };
   }, [field]);
 
-  const timelineState = timelapse?.timelineState;
-
   return (
     <div className={`relative ${className}`}>
       <canvas
@@ -613,37 +528,6 @@ export default function FieldTerrainGPU({
         className="absolute inset-0 h-full w-full"
         style={{ touchAction: "none", cursor: "grab" }}
       />
-
-      {/* cotas métricas del perímetro — flotan sobre la arista proyectada */}
-      {status === "ready" &&
-        cotas.map((c) => (
-          <span
-            key={c.key}
-            className={`pointer-events-none absolute z-10 -translate-x-1/2 -translate-y-1/2 rounded-full border px-1.5 py-0.5 font-mono text-[9px] tabular-nums transition-opacity duration-300 ${
-              c.behind
-                ? "border-piedra/40 bg-papel/50 text-bosque/40 opacity-40"
-                : "border-piedra/60 bg-papel/80 text-bosque/80 opacity-90"
-            }`}
-            style={{ left: `${c.x}%`, top: `${c.y}%` }}
-          >
-            {c.label}
-          </span>
-        ))}
-
-      {/* selector de vista analítica */}
-      {status === "ready" && (
-        <div className="absolute right-3 top-3 z-20">
-          <AnalyticalViewSelector mode={mode} onChange={handleModeChange} />
-        </div>
-      )}
-
-      {/* telemetría atmosférica sincronizada con la fecha del timelapse */}
-      {status === "ready" && timelineState && (
-        <AtmosphericTelemetryOverlay
-          timelineState={timelineState}
-          className="absolute left-3 top-3 z-20"
-        />
-      )}
 
       {status !== "ready" && status !== "failed" && (
         <div className="absolute inset-0 flex items-center justify-center bg-nube">
