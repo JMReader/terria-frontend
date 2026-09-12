@@ -12,8 +12,9 @@ import {
 import { TimelapseManifest } from "@/types/terria";
 import { API_BASE } from "@/lib/terriaApi";
 import { normalizeTimelapseManifest } from "@/lib/timelapseNormalizer";
-import { DEMO_TIMELAPSE_MANIFEST, DEMO_SOLANA_CERTIFICATION } from "@/data/timelapseMockData";
+import { DEMO_TIMELAPSE_MANIFEST } from "@/data/timelapseMockData";
 import { useFieldTimelapse } from "@/hooks/useFieldTimelapse";
+import { useFieldCertification } from "@/hooks/useFieldCertification";
 import PassportDiorama from "@/components/passport/PassportDiorama";
 import PassportTimelapse from "@/components/passport/PassportTimelapse";
 import SharePanel from "@/components/passport/SharePanel";
@@ -95,6 +96,9 @@ export default function ParcelPassportView({
   }, [field.id]);
 
   const timelapse = useFieldTimelapse({ manifest });
+  // Certificación blockchain real: lista versiones del campo, elige la vigente
+  // y consulta /verify. En modo demo (field del mock) muestra datos etiquetados.
+  const cert = useFieldCertification(field.id, { demo: source === "demo" });
   const publicUrl =
     shareState.isPublished && shareState.publicSlug
       ? typeof window !== "undefined"
@@ -206,7 +210,22 @@ export default function ParcelPassportView({
                 className={`space-y-4 ${tab === "tiempo" ? "" : "hidden"}`}
               >
                 <PassportTimelapse field={field} timelapse={timelapse} />
-                <SolanaAuditCard certification={DEMO_SOLANA_CERTIFICATION} />
+                {cert.audit ? (
+                  <SolanaAuditCard
+                    certification={cert.audit}
+                    versions={cert.monthlyChain}
+                  />
+                ) : (
+                  <div className="rounded-2xl border border-piedra-soft bg-papel p-4 text-center">
+                    <p className="text-xs font-mono text-piedra">
+                      {cert.state === "loading"
+                        ? "Consultando certificación on-chain…"
+                        : cert.state === "error"
+                          ? "No se pudo cargar la certificación del campo."
+                          : "Esta parcela todavía no tiene certificación blockchain emitida."}
+                    </p>
+                  </div>
+                )}
               </div>
             )}
             {visited.has("proyeccion") && (
@@ -234,8 +253,10 @@ export default function ParcelPassportView({
           {/* Certificado blockchain — anclado abajo, siempre visible */}
           <div className="shrink-0 border-t border-piedra-soft/70 bg-nube/60 px-4 py-3">
             <CertificatePdfCard
-              field={field}
+              pdfUrl={cert.pdfUrl}
+              certPageUrl={cert.certPageUrl}
               publicUrl={publicUrl}
+              loading={cert.state === "loading"}
               className="border-0 bg-transparent p-0"
             />
           </div>

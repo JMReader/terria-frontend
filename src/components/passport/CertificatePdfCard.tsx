@@ -2,26 +2,34 @@
 
 import React, { useEffect, useState } from "react";
 import { Download, FileText, Loader2 } from "lucide-react";
-import { FieldItem } from "@/data/fieldsData";
-import { fieldCertificatePdfUrl } from "@/lib/terriaApi";
 
 interface CertificatePdfCardProps {
-  field: FieldItem;
+  /** `/v1/public/certifications/{cert_uid}.pdf` — null si el campo no tiene certificación. */
+  pdfUrl: string | null;
+  /** `/cert/{cert_uid}` — ficha HTML print-ready del certificado. */
+  certPageUrl?: string | null;
   publicUrl?: string | null;
+  loading?: boolean;
   className?: string;
 }
 
 type PdfStatus = "checking" | "ready" | "pending";
 
 /**
- * Card del certificado blockchain PDF: estado del documento y descarga.
- * El PDF del backend incluye content_hash y la URL pública del pasaporte.
+ * Card del certificado blockchain: descarga el PDF real de la certificación
+ * (snapshot hasheado + ancla Solana) generado por el backend.
  */
-export default function CertificatePdfCard({ field, publicUrl, className = "" }: CertificatePdfCardProps) {
-  const pdfUrl = fieldCertificatePdfUrl(field.id);
+export default function CertificatePdfCard({
+  pdfUrl,
+  certPageUrl,
+  publicUrl,
+  loading = false,
+  className = "",
+}: CertificatePdfCardProps) {
   const [status, setStatus] = useState<PdfStatus>("checking");
 
   useEffect(() => {
+    if (!pdfUrl) return;
     let cancelled = false;
     fetch(pdfUrl, { method: "GET", headers: { Range: "bytes=0-16" } })
       .then((res) => {
@@ -44,28 +52,46 @@ export default function CertificatePdfCard({ field, publicUrl, className = "" }:
           <div className="min-w-0">
             <p className="text-sm font-semibold text-bosque">Certificado blockchain PDF</p>
             <p className="truncate text-[11px] font-mono text-piedra">
-              {publicUrl
-                ? `Acompaña al pasaporte público — ${publicUrl}`
-                : "Publicá la parcela para imprimir el link en el PDF"}
+              {pdfUrl
+                ? publicUrl
+                  ? `Acompaña al pasaporte público — ${publicUrl}`
+                  : "Snapshot canónico anclado en Solana devnet"
+                : "Todavía no hay certificación emitida para esta parcela"}
             </p>
           </div>
         </div>
 
-        {status === "checking" ? (
+        {loading || (pdfUrl && status === "checking") ? (
           <Loader2 className="h-4 w-4 shrink-0 animate-spin text-piedra" />
-        ) : status === "ready" ? (
-          <a
-            href={pdfUrl}
-            target="_blank"
-            rel="noopener noreferrer"
-            className="flex shrink-0 items-center gap-1.5 rounded-full bg-bosque px-3.5 py-2 text-[11px] font-mono font-bold uppercase tracking-wider text-nube transition-colors hover:bg-bosque-deep"
-          >
-            <Download className="h-3.5 w-3.5" />
-            Descargar PDF
-          </a>
-        ) : (
+        ) : pdfUrl && status === "ready" ? (
+          <div className="flex shrink-0 items-center gap-2">
+            {certPageUrl && (
+              <a
+                href={certPageUrl}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="rounded-full border border-piedra-soft bg-nube px-3.5 py-2 text-[11px] font-mono font-bold uppercase tracking-wider text-bosque/80 transition-colors hover:text-bosque"
+              >
+                Ver ficha
+              </a>
+            )}
+            <a
+              href={pdfUrl}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="flex items-center gap-1.5 rounded-full bg-bosque px-3.5 py-2 text-[11px] font-mono font-bold uppercase tracking-wider text-nube transition-colors hover:bg-bosque-deep"
+            >
+              <Download className="h-3.5 w-3.5" />
+              Descargar PDF
+            </a>
+          </div>
+        ) : pdfUrl ? (
           <span className="shrink-0 rounded-full border border-piedra-soft bg-nube px-3.5 py-2 text-[11px] font-mono font-bold uppercase tracking-wider text-piedra">
             En generación…
+          </span>
+        ) : (
+          <span className="shrink-0 rounded-full border border-piedra-soft bg-nube px-3.5 py-2 text-[11px] font-mono font-bold uppercase tracking-wider text-piedra">
+            Sin certificado
           </span>
         )}
       </div>

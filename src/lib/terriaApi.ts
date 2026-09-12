@@ -4,7 +4,15 @@ import {
   TimelapseFrame,
   WeatherDaily,
   TimelapseSource,
+  SolanaCertification,
 } from "@/types/terria";
+import {
+  CertificationAnchor,
+  CertificationStatus,
+  CertificationVersion,
+  CertificationVerify,
+  VerifyStatus,
+} from "@/types/certification";
 import { LandValuation } from "@/types/valuation";
 import {
   WhatIfSimulation,
@@ -765,8 +773,191 @@ export async function unpublishField(id: string, token: string | null): Promise<
   await authFetch(`${API_BASE}/v1/fields/${id}/unpublish`, token, { method: "POST" });
 }
 
-export function fieldCertificatePdfUrl(id: string): string {
-  return `${API_BASE}/v1/fields/${id}/certificate.pdf`;
+/* ---------- Certificación blockchain (snapshot anclado en Solana) ---------- */
+/* Espejo de app/blockchain/schemas.py — contrato "API Histórica y             */
+/* Certificación (Frontend) v0.1" §6-7.                                        */
+
+interface ApiCertificationAnchor {
+  provider: string;
+  cluster: string;
+  memo_payload: string;
+  tx_signature: string | null;
+  slot: number | null;
+  block_time: string | null;
+  status: string;
+  explorer_url: string | null;
+}
+
+interface ApiCertificationVersion {
+  id: string;
+  field_id: string;
+  version: number;
+  cert_uid: string;
+  schema_version: string;
+  algorithm_version: string;
+  period_from: number;
+  period_to: number;
+  status: CertificationStatus;
+  content_hash: string;
+  prev_content_hash: string | null;
+  issued_at: string | null;
+  created_at: string;
+  scope: "campaign" | "month";
+  month: string | null;
+  anchor: ApiCertificationAnchor | null;
+}
+
+interface ApiCertificationVerify {
+  status: VerifyStatus;
+  cert_uid: string;
+  field_id: string;
+  version: number;
+  expected_hash: string;
+  recomputed_hash: string;
+  on_chain_memo: string | null;
+  tx_signature: string | null;
+  explorer_url: string | null;
+}
+
+function adaptAnchor(a: ApiCertificationAnchor): CertificationAnchor {
+  return {
+    provider: a.provider,
+    cluster: a.cluster,
+    memoPayload: a.memo_payload,
+    txSignature: a.tx_signature,
+    slot: a.slot,
+    blockTime: a.block_time,
+    status: a.status,
+    explorerUrl: a.explorer_url,
+  };
+}
+
+function adaptCertificationVersion(v: ApiCertificationVersion): CertificationVersion {
+  return {
+    id: v.id,
+    fieldId: v.field_id,
+    version: v.version,
+    certUid: v.cert_uid,
+    schemaVersion: v.schema_version,
+    algorithmVersion: v.algorithm_version,
+    periodFrom: v.period_from,
+    periodTo: v.period_to,
+    status: v.status,
+    contentHash: v.content_hash,
+    prevContentHash: v.prev_content_hash,
+    issuedAt: v.issued_at,
+    createdAt: v.created_at,
+    scope: v.scope,
+    month: v.month,
+    anchor: v.anchor ? adaptAnchor(v.anchor) : null,
+  };
+}
+
+function adaptVerify(v: ApiCertificationVerify): CertificationVerify {
+  return {
+    status: v.status,
+    certUid: v.cert_uid,
+    fieldId: v.field_id,
+    version: v.version,
+    expectedHash: v.expected_hash,
+    recomputedHash: v.recomputed_hash,
+    onChainMemo: v.on_chain_memo,
+    txSignature: v.tx_signature,
+    explorerUrl: v.explorer_url,
+  };
+}
+
+/** Namespace URL de UUIDv5 (RFC 4122 §4.3). */
+const UUID_NS_URL = Uint8Array.from(
+  "6ba7b8119dad11d180b400c04fd430c8".match(/../g)!.map((h) => parseInt(h, 16))
+);
+
+/**
+ * cert_uid determinístico mensual — espejo de `monthly_cert_uid()` del backend:
+ * `uuid5(NAMESPACE_URL, "terria:monthly:{field_id}:{YYYY-MM}")`.
+ * Devuelve null si WebCrypto/SHA-1 no está disponible (contexto no seguro).
+ */
+export async function monthlyCertUid(
+  fieldId: string,
+  month: string
+): Promise<string | null> {
+  if (typeof crypto === "undefined" || !crypto.subtle) return null;
+  const name = new TextEncoder().encode(`terria:monthly:${fieldId}:${month}`);
+  const data = new Uint8Array(UUID_NS_URL.length + name.length);
+  data.set(UUID_NS_URL);
+  data.set(name, UUID_NS_URL.length);
+  const digest = new Uint8Array(await crypto.subtle.digest("SHA-1", data));
+  digest[6] = (digest[6] & 0x0f) | 0x50; // version 5
+  digest[8] = (digest[8] & 0x3f) | 0x80; // variant RFC 4122
+  const hex = Array.from(digest.subarray(0, 16), (b) =>
+    b.toString(16).padStart(2, "0")
+  ).join("");
+  return `${hex.slice(0, 8)}-${hex.slice(8, 12)}-${hex.slice(12, 16)}-${hex.slice(16, 20)}-${hex.slice(20)}`;
+}
+
+/** Versiones de certificación del campo (V1→Vn, con scope/month y ancla). */
+export async function listFieldCertifications(
+  fieldId: string
+): Promise<CertificationVersion[]> {
+  const raw = await fetchJson<ApiCertificationVersion[]>(
+    `${API_BASE}/v1/fields/${fieldId}/certifications`
+  );
+  return raw.map(adaptCertificationVersion);
+}
+
+/** Verificación pública: recomputa el hash y lo compara con el memo on-chain. */
+export async function verifyCertification(
+  certUid: string
+): Promise<CertificationVerify> {
+  const raw = await fetchJson<ApiCertificationVerify>(
+    `${API_BASE}/v1/public/certifications/${certUid}/verify`
+  );
+  return adaptVerify(raw);
+}
+
+/** PDF del certificado blockchain (A4, ReportLab) — distinto al certificate.pdf de campo. */
+export function certificationPdfUrl(certUid: string): string {
+  return `${API_BASE}/v1/public/certifications/${certUid}.pdf`;
+}
+
+/** Ficha HTML print-ready del certificado. */
+export function certificationPageUrl(certUid: string): string {
+  return `${API_BASE}/cert/${certUid}`;
+}
+
+/** Portada NDVI del certificado (ilustrativa, no forma parte del hash). */
+export function certificationHeroUrl(certUid: string): string {
+  return `${API_BASE}/v1/public/certifications/${certUid}/hero.png`;
+}
+
+/**
+ * View-model de auditoría para `SolanaAuditCard` construido desde datos reales:
+ * hash = content_hash del snapshot, firma = tx_signature del ancla on-chain.
+ */
+export function toAuditCertification(
+  v: CertificationVersion,
+  verify?: CertificationVerify | null
+): SolanaCertification {
+  const anchor = v.anchor;
+  return {
+    snapshotHash: v.contentHash,
+    txSignature: anchor?.txSignature ?? null,
+    cluster: anchor?.cluster ?? "devnet",
+    slot: anchor?.slot ?? null,
+    blockTime: anchor?.blockTime ? Date.parse(anchor.blockTime) / 1000 : null,
+    verified: verify?.status === "verified",
+    verifyStatus: verify?.status ?? "pending",
+    certifiedAt: v.issuedAt,
+    campaign:
+      v.scope === "month" && v.month
+        ? `${v.month} · mensual`
+        : `${v.periodFrom}→${v.periodTo}`,
+    version: v.version,
+    certUid: v.certUid,
+    memoPayload: anchor?.memoPayload ?? null,
+    memoProgram: "MemoSq4gqABAXKb96qnH8TysNcWxMyWCqXgDLGmfcHr",
+    explorerUrl: anchor?.explorerUrl ?? verify?.explorerUrl ?? null,
+  };
 }
 
 /** Resolución demo: busca en el mock por id o por slug derivado del nombre. */

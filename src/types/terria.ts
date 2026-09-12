@@ -84,14 +84,19 @@ export interface TimelineState {
 }
 
 export interface SolanaCertification {
-  snapshotHash: string; // SHA-256 canonical hash
-  txSignature: string;  // Solana devnet tx signature
-  cluster: "devnet" | "mainnet-beta";
-  slot: number;
-  blockTime: number;
-  verified: boolean;
-  certifiedAt: string;
-  campaign: string;
+  snapshotHash: string;       // content_hash del snapshot canónico (SHA-256)
+  txSignature: string | null; // firma de la tx Memo (null si aún no ancló)
+  cluster: string;            // "devnet" | "mainnet-beta" | ...
+  slot: number | null;
+  blockTime: number | null;
+  verified: boolean;          // verify.status === "verified"
+  verifyStatus?: "verified" | "tampered" | "pending" | "rpc_unavailable";
+  certifiedAt: string | null; // issued_at de la versión
+  campaign: string;           // etiqueta de período: "2024→2026" o "2025-04"
+  version?: number;
+  certUid?: string;
+  memoPayload?: string | null; // TERRIA1|v1|<cert_uid>|<hash>|<prev>
   memoProgram: string;
-  explorerUrl: string;
+  explorerUrl: string | null;
+  isDemo?: boolean;           // datos de demostración (no on-chain)
 }

@@ -7,10 +7,15 @@ export const DEMO_SOLANA_CERTIFICATION: SolanaCertification = {
   slot: 284910392,
   blockTime: 1739372400,
   verified: true,
+  verifyStatus: "verified",
   certifiedAt: "2025-02-12T18:30:00Z",
-  campaign: "2024/2025",
+  campaign: "2024→2025",
+  version: 2,
+  certUid: "demo-cert",
+  memoPayload: "TERRIA1|v1|demo-cert|b87f9c2a…|01eb18a3…",
   memoProgram: "MemoSq4gqABAXKb96qnH8TysNcWxMyWCqXgDLGmfcHr",
   explorerUrl: "https://explorer.solana.com/tx/4uX8eP9wBZ3M4X9rQ7kV2aL9nM1cE6tY8hR5vT3jK2pW1mS0dF7gH5jK9lP4oN6q?cluster=devnet",
+  isDemo: true,
 };
 
 // Generamos 60 días de serie meteorológica y 10 pasadas satelitales (Ene a Mar 2025)

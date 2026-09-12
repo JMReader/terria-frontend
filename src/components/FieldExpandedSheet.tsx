@@ -13,7 +13,7 @@ import gsap from "gsap";
 import { useGSAP } from "@gsap/react";
 import { X } from "lucide-react";
 import { FieldItem } from "@/data/fieldsData";
-import { DEMO_SOLANA_CERTIFICATION } from "@/data/timelapseMockData";
+import { useFieldCertification } from "@/hooks/useFieldCertification";
 import MetricStatBox from "@/components/ui/MetricStatBox";
 import SolanaAuditCard from "@/components/certification/SolanaAuditCard";
 import ValuationPanel from "@/components/valuation/ValuationPanel";
@@ -33,6 +33,8 @@ export default function FieldExpandedSheet({ field, open, onClose }: FieldExpand
   const [tab, setTab] = useState<SheetTab>("datos");
   const panelRef = useRef<HTMLDivElement>(null);
   const backdropRef = useRef<HTMLDivElement>(null);
+  // Certificación real del campo — sólo consulta la API cuando el sheet abre.
+  const cert = useFieldCertification(field.id, { enabled: open });
 
   useEffect(() => {
     if (!open) return;
@@ -196,7 +198,22 @@ export default function FieldExpandedSheet({ field, open, onClose }: FieldExpand
 
           {tab === "audit" && (
             <div className="space-y-4">
-              <SolanaAuditCard certification={DEMO_SOLANA_CERTIFICATION} />
+              {cert.audit ? (
+                <SolanaAuditCard
+                  certification={cert.audit}
+                  versions={cert.monthlyChain}
+                />
+              ) : (
+                <div className="rounded-2xl border border-piedra-soft bg-papel p-4 text-center">
+                  <p className="text-xs font-mono text-piedra">
+                    {cert.state === "loading"
+                      ? "Consultando certificación on-chain…"
+                      : cert.state === "error"
+                        ? "No se pudo cargar la certificación del campo."
+                        : "Este campo todavía no tiene certificación blockchain emitida."}
+                  </p>
+                </div>
+              )}
               <div className="rounded-2xl border border-piedra-soft bg-papel p-4">
                 <span className="text-[10px] font-mono font-bold tracking-wider text-piedra uppercase block mb-2">
                   Regla de Integridad Criptográfica
